@@ -23,6 +23,7 @@
 //   反引号路径是**对的**，判据只该钉「仓库里该有的文件」，故把配置声明的落点并入允许集合。
 //   依据是**配置本身**：配置里删掉这条落点，文档的引用就会重新变红（不会假绿）。
 import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { cachedReadText, overrideFile, clearOverrides } from './_file-cache.mjs';
 
@@ -56,19 +57,62 @@ function bundleTargets() {
   return out;
 }
 
+/**
+ * 被 `.gitignore` 声明忽略的路径 —— 它们**不在仓库里**（构建产物等），文档不该写成仓库文件。
+ *
+ * 🔴 为什么必须查这一条：`existsSync` 只看得见**本机**文件系统。像
+ *    `src-tauri/gen/schemas/acl-manifests.json` 这种 Tauri 构建产物，
+ *    跑过 `npm run app` 的机器上**存在**、全新克隆（CI）上**不存在** ——
+ *    于是本地永远绿、CI 必红（2026-10-30 就是这样挂的）。
+ *    判据来自 git 自身（`.gitignore` 是仓库配置），不是给某个文件名开后门。
+ */
+function ignoredSet(paths) {
+  if (paths.length === 0) return new Set();
+  const parse = (s) =>
+    new Set(
+      String(s ?? '')
+        .split(/\r?\n/)
+        .filter(Boolean),
+    );
+  try {
+    return parse(
+      execFileSync('git', ['check-ignore', '--stdin'], {
+        cwd: ROOT,
+        input: paths.join('\n'),
+        encoding: 'utf8',
+      }),
+    );
+  } catch (e) {
+    // `check-ignore` 在「一条都没命中」时退出码为 1，此时命中项仍写在 stdout 里
+    return parse(e.stdout);
+  }
+}
+
 function runAll() {
   const BUNDLE = bundleTargets();
-  return LIVE_DOCS.map((d) => {
+  const scan = LIVE_DOCS.map((d) => {
     const abs = path.join(ROOT, d);
-    if (!existsSync(abs)) return { name: `DOCS.path.${d}`, ok: false, detail: '文档自身不存在' };
+    if (!existsSync(abs)) return { d, txt: null, hits: [] };
     const txt = cachedReadText(abs);
-    const missing = [];
+    const hits = [];
     PATH_RE.lastIndex = 0;
     let m;
-    while ((m = PATH_RE.exec(txt))) {
-      if (existsSync(path.join(ROOT, m[1]))) continue;
-      if (BUNDLE.has(m[1])) continue; // 包内落点：仓库里没有是**对的**
-      missing.push(m[1]);
+    while ((m = PATH_RE.exec(txt))) hits.push(m[1]);
+    return { d, txt, hits };
+  });
+  // 一次 git 调用判完全部引用，避免逐条 spawn
+  const IGNORED = ignoredSet([...new Set(scan.flatMap((s) => s.hits))].filter((p) => !BUNDLE.has(p)));
+
+  return scan.map(({ d, txt, hits }) => {
+    if (txt === null) return { name: `DOCS.path.${d}`, ok: false, detail: '文档自身不存在' };
+    const missing = [];
+    for (const rel of hits) {
+      if (BUNDLE.has(rel)) continue; // 包内落点：仓库里没有是**对的**
+      if (IGNORED.has(rel)) {
+        missing.push(`${rel}（被 .gitignore 忽略，不是仓库文件）`);
+        continue;
+      }
+      if (!existsSync(path.join(ROOT, rel))) missing.push(rel);
     }
     return {
       name: `DOCS.path.${d}`,
@@ -83,16 +127,28 @@ const MUTATIONS = [
   {
     name: '在 AGENTS.md 里插一个不存在的仓库路径（文档漂移复发时的形状）',
     file: 'AGENTS.md',
-    find: 'npm run task -- check:docs',
-    replace: 'npm run task -- check:docs\n\n> 反证：`service/src/no-such-file.mjs` 应当不存在',
+    find: 'npm run check:full',
+    replace: 'npm run check:full\n\n> 反证：`service/src/no-such-file.mjs` 应当不存在',
     expect: ['DOCS.path.AGENTS.md'],
   },
   {
     name: '在 project_rules.md 里插一个不存在的路径',
     file: '.trae/rules/project_rules.md',
-    find: 'screens/library/meta.ts',
-    replace: 'screens/library/meta.ts` 与 `src/nope/gone.ts',
+    find: 'screens/manga/meta.ts',
+    replace: 'screens/manga/meta.ts` 与 `src/nope/gone.ts',
     expect: ['DOCS.path..trae/rules/project_rules.md'],
+  },
+  {
+    /*
+     * 这条专钉「本机存在 ⇒ 本地永远绿」那个漏洞（2026-10-30 CI 挂的正是它）。
+     * 靶子是 Tauri 构建产物：跑过构建的机器上有文件、全新克隆里没有。
+     * 判据若只靠 `existsSync`，本条在开发机上**不会变红**（假绿）—— 现在靠 `.gitignore` 判。
+     */
+    name: '在 AGENTS.md 里引用被 .gitignore 忽略的构建产物（本机存在、克隆里没有）',
+    file: 'AGENTS.md',
+    find: 'npm run check:nightly',
+    replace: 'npm run check:nightly\n\n> 反证：`src-tauri/gen/schemas/acl-manifests.json` 不属于仓库',
+    expect: ['DOCS.path.AGENTS.md'],
   },
 ];
 

@@ -14,9 +14,9 @@
  *
  *   CATALOG  src/screens/settings/catalog.ts        数据源（剔除了吗 / 补进了吗 / 项数对得上吗）
  *   WIRING   src/screens/settings/sections.tsx      设置页是否真的渲染控件、是否遍历三小节
- *   STORE    src/music/store.ts                     六个偏好字段（默认值 / setter / 持久化）
+ *   STORE    src/modules/music/store.ts                     六个偏好字段（默认值 / setter / 持久化）
  *   PLAYER   src/screens/music/ExpandedPlayer.tsx   偏好是否真的落到播放器（CSS 变量 / 条件类名）
- *   OPTIONS  src/music/player-options.ts            选项常量的单一事实源（防设置页/播放器两套皮肤名）
+ *   OPTIONS  src/modules/music/player-options.ts            选项常量的单一事实源（防设置页/播放器两套皮肤名）
  *
  * 最危险的两种假绿，本脚本专门防：
  *   ① 「只在数据里标 live、UI 不渲染控件」—— 于是分四层断言：catalog 有 live 项、
@@ -60,11 +60,15 @@ const F = {
   secGeneral: path.join(APP, 'src', 'screens', 'settings', 'sections', 'GeneralSection.tsx'),
   secTranslate: path.join(APP, 'src', 'screens', 'settings', 'sections', 'TranslateSection.tsx'),
   secMedia: path.join(APP, 'src', 'screens', 'settings', 'sections', 'MediaSection.tsx'),
+  // ④ 资源与投放：音乐缓存搬来这里之后，它的渲染点与变异锚都落在这个文件
+  secResource: path.join(APP, 'src', 'screens', 'settings', 'sections', 'ResourceSection.tsx'),
+  // ③ 的第一张卡（设计稿 `.account-grid`）：本轮已删，源键保留用于断言"文件不得存在"
+  accountCards: path.join(APP, 'src', 'screens', 'settings', 'AccountCardsBlock.tsx'),
   secAbout: path.join(APP, 'src', 'screens', 'settings', 'sections', 'AboutSection.tsx'),
-  store: path.join(APP, 'src', 'music', 'store.ts'),
+  store: path.join(APP, 'src', 'modules', 'music', 'store.ts'),
   // D-156：music/store.ts 的 action 段已按切片切到 music/actions/*.ts。
-  actionsDir: path.join(APP, 'src', 'music', 'actions'),
-  options: path.join(APP, 'src', 'music', 'player-options.ts'),
+  actionsDir: path.join(APP, 'src', 'modules', 'music', 'actions'),
+  options: path.join(APP, 'src', 'modules', 'music', 'player-options.ts'),
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   musicScreen: path.join(APP, 'src', 'screens', 'MusicScreen.tsx'),
   main: path.join(APP, 'src', 'main.tsx'),
@@ -73,9 +77,9 @@ const F = {
   //    就变成"只钉住调用、没钉住实现"：把 contextmenu 那段从 desktopGards.ts 删掉它照样绿。
   //    两处必须**都**读：调用在 main.tsx，实现在这里。
   desktopGuards: path.join(APP, 'src', 'tools', 'desktopGards.ts'),
-  // 「音乐缓存」通栏四格的实现（放 screens/settings/ 而非 components/units/ ——
-  // 后者的文件清单被 units-structure-check 的 MANIFEST 锁死为 12 个，多一个即红）
-  cacheBlock: path.join(APP, 'src', 'screens', 'settings', 'CacheBlock.tsx'),
+  // 「音乐缓存」的清理入口（2026-10-25 起它不再是独立通栏块 `CacheBlock.tsx` ——
+  // 收进「存储占用」的音乐缓存行：行内两个读数 + 「删除」下拉。
+  // 判据源跟着搬到 StorageBlock.tsx —— 它在 F 里**本来就有**（见 licensesBlock 附近），此处不再重复定义）
   // ② 翻译服务（S6）的四个新文件 + 两个被它复用的排版件
   engineApi: path.join(APP, 'src', 'screens', 'settings', 'engine-api.ts'),
   engineState: path.join(APP, 'src', 'screens', 'settings', 'engine-state.ts'),
@@ -87,12 +91,14 @@ const F = {
   settingsScreen: path.join(APP, 'src', 'screens', 'SettingsScreen.tsx'),
   // X-C3「准备中」屏（S6 的「L1–L4 文案 + 首张稍慢」）。它不在设置页里，
   // 但它与设置页共享同一条事实源（Rust 的 StatusView），所以放同一轮断言。
-  notReady: path.join(APP, 'src', 'screens', 'library', 'NotReadyScreen.tsx'),
+  notReady: path.join(APP, 'src', 'screens', 'manga', 'NotReadyScreen.tsx'),
+  // 引导页拆形态后的子树（2026-10-24）：判据语料必须覆盖它，
+  // 否则一拆就把"文案/结构在不在"整套判据读成空断言（读不到不是报红，是恒假或恒真）。
+  notReadyDir: path.join(APP, 'src', 'screens', 'manga', 'notready'),
   // D-233：五段常量与纯函数（assembly.ts）+ 时间线渲染（AssemblyTimeline.tsx）
-  assembly: path.join(APP, 'src', 'screens', 'library', 'assembly.ts'),
-  timeline: path.join(APP, 'src', 'screens', 'library', 'AssemblyTimeline.tsx'),
+  assembly: path.join(APP, 'src', 'screens', 'manga', 'assembly.ts'),
+  timeline: path.join(APP, 'src', 'screens', 'manga', 'AssemblyTimeline.tsx'),
   // 未就绪屏「使用在线翻译」卡片里的内嵌表单（同一屏的另一半，判据同源）
-  onlineApi: path.join(APP, 'src', 'screens', 'settings', 'OnlineApiForm.tsx'),
   ipc: path.join(APP, 'src', 'ipc', 'index.ts'),
   nav: path.join(APP, 'src', 'stores', 'nav.ts'),
   // 断言读到的 css 是全分片拼接（见 loadSources）。
@@ -174,10 +180,18 @@ const ADDED = [
   { id: 'lyrics-locked', label: '锁定歌词窗口' },
   { id: 'vinyl-color-mode', label: '彩胶配色' },
   { id: 'vinyl-color', label: '彩胶自定义色' },
-  { id: 'music-cache', label: '音乐缓存' },
+  /*
+   * 「音乐缓存」**不在 ③ 了**：它搬到 ④ 资源与投放（本轮需求）。
+   * 那是一个清理动作、与「存储占用」同类，不是一条播放设置。
+   */
 ];
 
-/** ③ MEDIA 的三小节 id（顺序即渲染顺序） */
+/**
+ * ③ MEDIA 的**三个**小节 id（顺序即渲染顺序）。
+ *
+ * ⚠️ 原先是四个（playback / cache / lyrics / vinyl）：`cache`（音乐缓存）已搬到
+ * ④ 资源与投放 —— 它回答的是"磁盘占了多少、怎么清"，与「存储占用」同类。
+ */
 const MEDIA_GROUPS = ['playback', 'lyrics', 'vinyl'];
 
 /** ③ 全表项数自校常量应等于的合计
@@ -189,8 +203,10 @@ const MEDIA_GROUPS = ['playback', 'lyrics', 'vinyl'];
  *  → **33**（② 推理引擎加「翻译方向」1 项，ver2.1：把"方向逐任务下发、英译中走离线 nllb"
  *     写进界面 —— 否则引擎诊断里的「源语言：按任务方向」没有一处能自答）
  *  → **34**（② 加「翻译来源」小节 1 项，ver2.2：在线翻译并入 ② 作为第一个小节（P-D2）
- *     —— 来源二选一（本地引擎 / 在线 API），是服务的设置不是任务属性（P-D1）） */
-const SPEC_TOTAL = 34;
+ *     —— 来源二选一（本地引擎 / 在线 API），是服务的设置不是任务属性（P-D1））
+ *  → **33**（④ 删「音乐缓存」独立项，2026-10-25：收进「存储占用」的音乐缓存行）
+ *  → **32**（④ 再删「临时文件」项，同日：「清理」卡与投放规则脚注一并去掉） */
+const SPEC_TOTAL = 32;
 
 /** ④ 设置页必须真正取用的 store setter（逐项对应的控件回写） */
 const MEDIA_SETTERS = [
@@ -230,6 +246,21 @@ const OPTION_EXPORTS = [
 
 // ── 读文件 ───────────────────────────────────────────────────────────────
 const readMaybe = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
+
+/**
+ * 引导页拆形态后的子树（三种形态 / 卡片壳 / 徽标 / 文案 / 派生量）。
+ *
+ * 🔴 判据语料必须是**整棵子树**：拆之前所有文案与结构都在一个文件里，
+ *    只读分派文件会让那批判据读不到东西 —— 而读不到不是报红，是**静默变成空断言**。
+ */
+const readNotReadyParts = () => {
+  if (!existsSync(F.notReadyDir)) return '';
+  return readdirSync(F.notReadyDir)
+    .filter((f) => f.endsWith('.ts') || f.endsWith('.tsx'))
+    .sort()
+    .map((f) => readMaybe(path.join(F.notReadyDir, f)))
+    .join('\n');
+};
 const readBytes = (p) => (existsSync(p) ? readFileSync(p) : null);
 
 function loadSources() {
@@ -242,6 +273,12 @@ function loadSources() {
       .filter((n) => n.endsWith('.tsx'))
       .map((n) => stripComments(readMaybe(path.join(F.sectionsDir, n))))
       .join('\n'),
+    /*
+     * ④ 资源与投放单独一份（不并进上面的拼接源）：
+     * 「音乐缓存」的渲染点在这里，而判据必须能区分「ResourceSection 渲染了它」
+     * 与「别的 Section 里恰好有同名 case」—— 用拼接源判会把两者混为一谈。
+     */
+    secResource: stripComments(readMaybe(F.secResource)),
     // D-156：`store.ts` 的 action 段已切到 `music/actions/*.ts`（setter / hydratePrefs 等）。
     // 读「store.ts + 全部切片」的逐文件 strip 拼接 —— 否则 STORE.setter.* / STORE.hydrate.*
     // 会因切片而假红（本次实测 8 条）。目录动态列举 ⇒ 以后每切一段自动覆盖。
@@ -259,7 +296,8 @@ function loadSources() {
     main: readMaybe(F.main),
     desktopGuards: readMaybe(F.desktopGuards),
     entryHtml: readMaybe(F.entryHtml),
-    cacheBlock: readMaybe(F.cacheBlock),
+    storageBlock: readMaybe(F.storageBlock),
+    accountCards: readMaybe(F.accountCards),
     engineApi: readMaybe(F.engineApi),
     engineState: readMaybe(F.engineState),
     engineDiag: readMaybe(F.engineDiag),
@@ -268,10 +306,9 @@ function loadSources() {
     parts: readMaybe(F.parts),
     specCheck: readMaybe(F.specCheck),
     settingsScreen: readMaybe(F.settingsScreen),
-    notReady: readMaybe(F.notReady),
+    notReady: readMaybe(F.notReady) + '\n' + readNotReadyParts(),
     assembly: readMaybe(F.assembly),
     timeline: readMaybe(F.timeline),
-    onlineApi: readMaybe(F.onlineApi),
     ipc: readMaybe(F.ipc),
     nav: readMaybe(F.nav),
     shellPrefs: readMaybe(F.shellPrefs),
@@ -279,7 +316,6 @@ function loadSources() {
     tokens: readMaybe(F.tokens),
     appMain: readMaybe(F.appMain),
     settingsPane: readMaybe(F.settingsPane),
-    storageBlock: readMaybe(F.storageBlock),
     licensesBlock: readMaybe(F.licensesBlock),
     licensesJson: readMaybe(F.licensesJson),
     genScript: readMaybe(F.genScript),
@@ -518,6 +554,17 @@ const add = (id, group, run) => A.push({ id, group, run });
 
 const CAT_ERR = (cat) => (cat?.err ? `catalog.ts 导入失败（无法验证数据结构）：${cat.err}` : null);
 
+/** 取「翻译服务」组里指定项的 `why`（行内说明）—— 空闲卸载两行的文案就住在这里 */
+const idleWhys = (ctx) => {
+  const sec = (ctx.cat?.mod?.SETTINGS_SECTIONS ?? []).find((x) => x.id === 'translate');
+  const items = (sec?.groups ?? []).flatMap((g) => g.items ?? []);
+  const out = {};
+  for (const id of ['idle-llm', 'idle-vision']) {
+    out[id] = items.find((i) => i.id === id)?.why ?? '';
+  }
+  return out;
+};
+
 // ============================ ① EXCLUDED ============================
 for (const ex of EXCLUDED) {
   add(`EXCLUDED.${ex.id}`, 'EXCLUDED', (ctx) => {
@@ -579,6 +626,48 @@ add('ADDED.groups', 'ADDED', (ctx) => {
     ok: exact,
     detail: exact ? '' : `MEDIA 小程序应为 [${MEDIA_GROUPS.join(', ')}]（按此顺序），实为 [${ids.join(', ')}]`,
   };
+});
+add('ADDED.accountCards', 'ADDED', (ctx) => {
+  /*
+   * 「音乐账号」卡**必须不在 ③ 里**（本轮需求）。
+   *
+   * 为什么删：账号是音乐屏自己的事 —— 工具条右侧那枚按钮就是登录入口，
+   * 点开还弹登录框。设置页再摆一张四格卡，等于把同一个身份状态做了两套界面，
+   * 而这一页的主语是"播放与媒体"。
+   *
+   * 判据钉的是**"删干净"**：组件文件已删 + 页面不再渲染 + catalog 里没有账号项。
+   * 只判其中一条的话，"文件删了但组件还挂着"或"组件删了但 catalog 还有一条"都会静默通过。
+   */
+  const secs = stripComments(ctx.s.sections);
+  const problems = [];
+  if (ctx.s.accountCards) problems.push('AccountCardsBlock.tsx 仍在（删掉卡就该删掉组件）');
+  if (/<AccountCardsBlock\b/.test(secs)) problems.push('设置页仍在渲染「音乐账号」卡');
+  const catText = JSON.stringify(ctx.cat?.mod?.MEDIA ?? {});
+  if (/音乐账号/.test(catText)) problems.push('catalog 的 ③ 里仍有「音乐账号」相关项');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('ADDED.segControls', 'ADDED', (ctx) => {
+  // 两档互斥选择在设计稿里是 `.seg` 分段控件（一眼看全、点一下就换），不是下拉。
+  // 三条一起判：① 两处都换成通用单元 `Segmented`；② 单元样式真的存在（`.ui-seg-btn.is-on`）——
+  //   只有类名没有规则是这一轮之前刚抓过的缺陷家族，控件换了但没样式=换了个更坏的形态；
+  //   ③ 不许留下第二套自造分段样式（`.music-dlset-seg` 已收进单元）。
+  const secs = stripComments(ctx.s.sections);
+  const problems = [];
+  for (const id of ['lyrics-mode', 'vinyl-color-mode']) {
+    const at = secs.indexOf(`case '${id}':`);
+    if (at < 0) {
+      problems.push(`找不到 case '${id}'`);
+      continue;
+    }
+    const next = secs.indexOf('case ', at + 10);
+    const block = secs.slice(at, next > 0 ? next : at + 700);
+    if (!/<Segmented\b/.test(block)) problems.push(id + ' 不是分段控件（设计稿这里是一排 seg 按钮）');
+    if (/<Select\b/.test(block)) problems.push(`${id} 仍留着下拉`);
+  }
+  const css = stripComments(ctx.s.css);
+  if (!css.includes('.ui-seg-btn.is-on')) problems.push('`.ui-seg-btn.is-on` 规则缺失（单元渲染出来会没样式）');
+  if (/\.music-dlset-seg\b/.test(css)) problems.push('还有第二套自造分段样式 `.music-dlset-seg`');
+  return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('ADDED.total', 'ADDED', (ctx) => {
   const { cat } = ctx;
@@ -910,15 +999,24 @@ add('CACHE.layoutFlag', 'CACHE', (ctx) => {
   const { cat } = ctx;
   const dataErr = CAT_ERR(cat);
   if (dataErr) return { ok: false, detail: dataErr };
-  const hit = flatItems(cat.mod.MEDIA).find((i) => i.id === 'music-cache');
-  if (!hit) return { ok: false, detail: 'MEDIA 里缺项 id=music-cache' };
+  /*
+   * 🔴 2026-10-25 重构：音乐缓存**不再是 catalog 里的独立项**（`CacheBlock` 已删），
+   *    它收进了「存储占用」的音乐缓存行。所以这里判据换成"存储占用必须是 block"——
+   *    三行「图标 / 名称+目录 / 读数+动作」塞进 Row 的窄右列会被压成一条读不了的细缝，
+   *    这条约束对新形态同样成立，而且**只有它能挡住"把三行块塞回 Row"这个退化**。
+   *
+   *    ⚠️ 别再判 `music-cache` 项：它已不在 catalog 里，判它只会红，
+   *    而那条红不指向任何真实缺口（本轮就踩到过）。
+   */
+  const hit = flatItems(cat.mod.RESOURCE).find((i) => i.id === 'storage-usage');
+  if (!hit) return { ok: false, detail: '④ 资源与投放里缺项 id=storage-usage' };
   return {
     ok: hit.layout === 'block',
     detail:
       hit.layout === 'block'
         ? ''
-        : `music-cache 的 layout=${JSON.stringify(hit.layout)}，应为 'block'` +
-          '（否则会被包进 Row 的窄右列，四格被压扁）',
+        : `storage-usage 的 layout=${JSON.stringify(hit.layout)}，应为 'block'` +
+          '（否则会被包进 Row 的窄右列，三行被压扁）',
   };
 });
 add('CACHE.groupSkipsRow', 'CACHE', (ctx) => {
@@ -942,19 +1040,76 @@ add('CACHE.groupSkipsRow', 'CACHE', (ctx) => {
 });
 add('CACHE.blockRendersFourCells', 'CACHE', (ctx) => {
   /*
-   * 四格的四个格子必须都在：文案 / 目录路径 / 总大小 / 两个按钮。
+   * 卡的五个格子必须都在：**卡头**（标题 + 统计口径）/ 合计 / 逐平台行 / 动作 / 目录路径。
    *
-   * 判据取 `CacheBlock` 的**组件源码**并数关键类名 —— 而不是查 `sections.tsx`
-   * 里有没有那几段文字：组件搬文件时引用关系会变，源码里的类名不会。
+   * ⚠️ 卡头的位置按设计稿落：设计稿 ③ 的第三张卡是独立的「音乐缓存」卡，
+   * 卡头由外层 `.s-card-head`（产品 `.set-subtitle`）给，**不在块内部**
+   * （块内再写一遍就是同一句话出现两次）。所以这里分三处判：
+   *   ① 目录里有一个独立的 cache 组，标题与统计口径逐字 == 设计稿；
+   *   ② 块内**不许**再有 `set-cache-head`（重复卡头）；
+   *   ③ 块内的四个格子（合计 / 逐平台行 / 动作 / 路径）都在。
    */
-  const src = ctx.s.cacheBlock;
-  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx（四格实现不在预期位置）' };
-  const need = ['set-cache-name', 'set-cache-path', 'set-cache-total', 'set-cache-acts'];
-  const missing = need.filter((n) => !new RegExp(`${q(n)}`).test(src));
-  return {
-    ok: missing.length === 0,
-    detail: missing.length ? `四格里缺：${missing.join('、')}（少一格就不是规格里的四格）` : '',
-  };
+  const src = ctx.s.storageBlock;
+  if (!src) return { ok: false, detail: '找不到 StorageBlock.tsx（音乐缓存清理入口不在预期位置）' };
+  const problems = [];
+  /*
+   * 🔴 2026-10-25 重构：音乐缓存**不再是 catalog 里的独立项**（`CacheBlock` 已删）。
+   *    它现在是「存储占用」三行里的一行，形态与另两行同构：
+   *    图标 | 名称 + 目录地址 | 右列读数与动作。
+   *
+   *    所以判据从"catalog 有 music-cache 项"改成"StorageBlock 里有这一行且能清"——
+   *    前者已不成立，继续判它只会红，而那条红不指向任何真实缺口。
+   *
+   *    新判据分四处：
+   *      ① 行内两个读数（名称 `音乐缓存` + 目录地址 `set-storage-dir`）；
+   *      ② 行内动作入口（`MenuButton` 的「删除」）；
+   *      ③ 下拉五项的构成（4 平台 + 删除全部）；
+   *      ④ 不许再出现旧四格块的类名（`set-cache-total` / `set-cache-rows`）——
+   *         那是已删形态的残留，留着说明"删了一半"。
+   */
+  if (!/音乐缓存/.test(src)) problems.push('StorageBlock 里没有「音乐缓存」这一行');
+  /*
+   * 音乐缓存行必须**同时**有：目录地址入口 + 「删除」下拉。
+   *
+   * 🔴 判据必须锚在**这一行的 JSX 区间**里，不能只查"文件里出现过 set-storage-dir" ——
+   *    三行都有那个类名，只查存在性的话「把音乐缓存那行的入口摘掉」照样绿
+   *    （本轮回证抓到过这个假阳性）。
+   *
+   * 区间取法：从 `<strong>音乐缓存</strong>` 起，到**下一个** `.set-storage-row` 之前。
+   * ⚠️ 不能用裸的 `音乐缓存` 定位起点：它在文件头的文档注释里先出现，
+   *    截出来的窗口会落在注释里 ⇒ 必红。
+   * ⚠️ 也不能只把窗口开到固定长度：「摘掉入口」的反证会在行内插入元素，
+   *    固定长度窗口会把下一行的入口也框进来 ⇒ 假阳性（本轮回证踩过两次）。
+   */
+  const rowStart = src.indexOf('<strong>音乐缓存</strong>');
+  const nextRow = rowStart >= 0 ? src.indexOf('className="set-storage-row"', rowStart) : -1;
+  const rowText = rowStart >= 0 ? src.slice(rowStart, nextRow > rowStart ? nextRow : undefined) : '';
+  if (!rowText) problems.push('找不到音乐缓存那一行的 JSX（<strong>音乐缓存</strong>）');
+  if (rowText && !new RegExp(q('set-storage-dir')).test(rowText)) {
+    problems.push('音乐缓存行内没有目录地址入口（set-storage-dir）');
+  }
+  /*
+   * 🔴 入口必须挂在**条件表达式**上（`{root ? … : …}`）：路径拿不到时不能渲染出
+   *    一个点了没反应的入口。只查 `set-storage-dir` 存在是测不到这一点的 ——
+   *    把 `{root ?` 改成 `{false ?` 之后类名**仍在源码里**（只是运行时不会渲染），
+   *    源码级判据照样绿（本轮回证抓到过这个假阳性）。
+   *    所以额外要求这行里出现 `{root ?` —— 它才是"守卫在不在"的可判据形态。
+   */
+  if (rowText && !/\{root \?/.test(rowText)) {
+    problems.push('音乐缓存行的目录入口没有挂条件表达式（{root ? …}）—— 路径不可用时会渲染出死入口');
+  }
+  if (rowText && !/<MenuButton\b/.test(rowText)) {
+    problems.push('音乐缓存行内没有「删除」下拉入口（MenuButton）');
+  }
+  // 下拉必须四项平台 + 「删除全部」，缺一即用户清不干净或清不到单个
+  const providerCount = (src.match(/PROVIDER_ORDER\.map/g) || []).length;
+  if (providerCount < 1) problems.push('下拉没有遍历 PROVIDER_ORDER（逐平台项缺失）');
+  if (!/label="删除全部"/.test(src)) problems.push('下拉没有「删除全部」那一行');
+  // 旧四格块的类名必须清干净
+  for (const dead of ['set-cache-total', 'set-cache-rows', 'set-cache-acts', 'set-cache-path']) {
+    if (new RegExp(q(dead)).test(src)) problems.push(`残留旧形态类名：${dead}（四格块已删，应一并清掉）`);
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('CACHE.openDirGuarded', 'CACHE', (ctx) => {
   /*
@@ -965,14 +1120,20 @@ add('CACHE.openDirGuarded', 'CACHE', (ctx) => {
    * 但目录被手工删掉 / 换机迁移后就会。**症状是点一下报错**，
    * 所以必须判「按钮被禁用」或「调用有兜底」，二者至少居其一。
    */
-  const src = ctx.s.cacheBlock;
-  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx' };
-  const disabled = /disabled=\{[^}]*root/.test(src);
+  const src = ctx.s.storageBlock;
+  if (!src) return { ok: false, detail: '找不到 StorageBlock.tsx' };
+  /*
+   * 🔴 2026-10-25 形态变了：目录地址**本身**就是打开入口（`Btn kind="text"`），
+   *    不再是「打开目录」按钮。所以「禁用」的判据换成「路径为空时不渲染这个入口」——
+   *    即条件渲染 `root ? <Btn …/> : <small>…`，效果等价于禁用（点了没反应比不给入口更糟）。
+   *    `.catch` 那一条不变：目录可能被手工删掉，必须兜住并说清楚。
+   */
+  const guardedByPresence = /\{root \?/.test(src) || /\{lib\?\.root \?/.test(src) || /\{modelRoot \?/.test(src);
   const caught = /openPath\([^)]*\)[\s\S]{0,120}?\.catch\(/.test(src);
   return {
-    ok: disabled && caught,
-    detail: !disabled
-      ? '「打开目录」没有按 root 禁用（路径不可用时点了只会报错）'
+    ok: guardedByPresence && caught,
+    detail: !guardedByPresence
+      ? '目录入口没有按路径存在与否条件渲染（路径不可用时点了只会报错）'
       : !caught
         ? 'openPath 没有 .catch（目录被手工删掉时用户只看到一次报错，且不知道发生了什么）'
         : '',
@@ -985,8 +1146,8 @@ add('CACHE.confirmBeforeClear', 'CACHE', (ctx) => {
    * 判据取「确认弹层的组件」与「调用清除的位置」两处：
    * 只有弹层没有确认、或有确认但清除绕过了它，都判红。
    */
-  const src = ctx.s.cacheBlock;
-  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx' };
+  const src = ctx.s.storageBlock;
+  if (!src) return { ok: false, detail: '找不到 StorageBlock.tsx' };
   // D-143：模态壳已收口到通用单元 `units/Modal`（`.modal-mask` + `role="dialog"` 在单元里），
   // 故这里改判「用 Modal 渲染确认层」，而不是再要求本文件内联那段 DOM。
   const hasModal = /<Modal\b/.test(src);
@@ -1012,7 +1173,7 @@ add('CACHE.reloadAfterClear', 'CACHE', (ctx) => {
    * 所以前端**不能靠 catch 判断成败**，只能靠"清完再读一次数字看它变没变"。
    * 漏了这一步的症状是：清除确实发生了，但界面上的大小纹丝不动 —— 用户会以为没生效。
    */
-  const body = fnBody(ctx.s.cacheBlock, 'CacheBlock') ?? '';
+  const body = fnBody(ctx.s.storageBlock, 'StorageBlock') ?? '';
   const clearAt = body.indexOf('musicCacheClear');
   const reloadAfter = clearAt >= 0 && body.indexOf('reload()', clearAt) > clearAt;
   return {
@@ -1033,29 +1194,30 @@ add('CACHE.unitsBase1024', 'CACHE', (ctx) => {
    * 次数与正确性无关（第一版判据说"至少两处"就误报了一个正确的循环实现）。
    * 真正要钉的是"基数是 1024"与"格式是两位小数"这两件**规格事实**。
    */
-  const src = ctx.s.cacheBlock;
-  if (!src) return { ok: false, detail: '找不到 CacheBlock.tsx' };
-  const body = fnBody(src, 'formatBytes') ?? '';
-  const base1024 = /\b1024\b/.test(body);
-  const notBase1000 = !/\b1000\b/.test(body);
-  const fixed2 = /\.toFixed\(\s*2\s*\)/.test(body);
-  const hasG = /['"]G['"]/.test(body);
+  /*
+   * 🔴 2026-10-25：本地那份 `formatBytes` 已删（原先 `CacheBlock` 与 `StorageBlock`
+   *    各持一份，收起进 StorageBlock 后改走共享的 `@tools`）。
+   *    所以判据从"本文件内有 1024 进制实现"改成"**引用共享实现**，且禁止本文件再写第二份"——
+   *    后者才是这条断言真正该拦的：两份换算迟早漂移（一处 1024、一处 1000），
+   *    而界面不会报错，只是两个地方显示的量对不上。
+   */
+  const src = ctx.s.storageBlock;
+  if (!src) return { ok: false, detail: '找不到 StorageBlock.tsx' };
+  const usesShared =
+    /formatBytes[^;]*from\s+['"]@tools['"]/.test(src) || /from\s+['"]@tools['"][^;]*formatBytes/.test(src);
+  const localDup = /function\s+formatBytes\s*\(/.test(src);
   return {
-    ok: base1024 && notBase1000 && fixed2 && hasG,
-    detail: !base1024
-      ? 'formatBytes 没有 1024 进制（规格要求 1024，与系统容量口径一致）'
-      : !notBase1000
-        ? 'formatBytes 出现了 1000（规格是 1024 进制，用 1000 会与系统显示的量对不上）'
-        : !fixed2
-          ? 'formatBytes 没有 toFixed(2)（规格要求保留 2 位小数，如 1.50 M）'
-          : !hasG
-            ? "formatBytes 的单位阶梯里没有 'G'（超过 1G 的缓存会被显示成 1024.00 M）"
-            : '',
+    ok: usesShared && !localDup,
+    detail: !usesShared
+      ? '没有引用 @tools 的共享 formatBytes（会变成第二套换算口径）'
+      : localDup
+        ? '本文件又写了一份 formatBytes（两份换算迟早漂移：一处 1024、一处 1000）'
+        : '',
   };
 });
 add('CACHE.providerLabelMap', 'CACHE', (ctx) => {
   // 四个平台的中文名映射。写错一个，用户就会看到「清除XX音乐」这种占位名。
-  const src = ctx.s.cacheBlock ?? '';
+  const src = ctx.s.storageBlock ?? '';
   const missing = ['netease', 'kugou', 'qqmusic', 'migu'].filter(
     (k) => !new RegExp(`${k}\\s*:\\s*['"][^'"]+['"]`).test(src),
   );
@@ -1072,8 +1234,9 @@ add('CACHE.zeroDisabled', 'CACHE', (ctx) => {
    * 所以要求 disabled 的判据表达式里**出现该项的字节数变量**，
    * 即"这个平台的字节数为 0 时才禁"。
    */
-  const src = ctx.s.cacheBlock ?? '';
-  const ok = /disabled=\{\s*bytes\s*<=\s*0\s*\}/.test(src);
+  const src = ctx.s.storageBlock ?? '';
+  // 判据：disabled 的表达式必须以「这个平台的字节数 <= 0」打头（后面可以再 || busy || failed）
+  const ok = /disabled=\{\s*bytes\s*<=\s*0/.test(src);
   return {
     ok,
     detail: ok ? '' : '某平台 0 缓存时没有置灰（无可删之物却给可点的入口，点了像坏了）',
@@ -1102,7 +1265,9 @@ add('CACHE.zeroDisabled', 'CACHE', (ctx) => {
 /** ② 的四小节 id（顺序即渲染顺序，也是 C11 判据「恰 4 个 `.set-subtitle`」的来源） */
 const ENGINE_GROUPS = ['source', 'pairing', 'inference', 'model'];
 /** 四小节标题字面量 —— C11 同时校验文字，这里必须逐字同源 */
-const ENGINE_SUBTITLES = ['翻译来源', '服务与配对', '推理引擎', '模型与诊断'];
+// 首节标题按设计稿是「翻译链路」（卡片副标题「二选一 · 下一次翻译生效」）——
+// 它取代了旧名「翻译来源」：这一节里除了来源二选一，还有在线 API 的密钥与连通性。
+const ENGINE_SUBTITLES = ['翻译链路', '服务与配对', '推理引擎', '模型与诊断'];
 /** 折叠区里剩下的三个区块标题（第 4 个「最近阶段日志」在 ver2.1 被**摘出**折叠范围，
  *  成为常驻日志区 —— 见《03》§3。它一旦回到折叠区，`ENGINE.run.noDupeLogSection` 变红） */
 const DIAG_SECTIONS = ['进程状态', '生效配置', '模型状态'];
@@ -1189,9 +1354,11 @@ add('ENGINE.wiring.fourSubTitles', 'ENGINE', (ctx) => {
    * ver2.2（P-D2）起是 4 个：在线翻译并入 ② 作为第一个小节「翻译来源」。
    */
   const body = stripComments(raw);
-  const n = (body.match(/<SubTitle>/g) ?? []).length;
+  // 判据按 `<SubTitle` 前缀数（不要求紧跟 `>`）：小节标题现在带 `head` 卡片副标题，
+  // 写成 `<SubTitle>` 全等会漏数 —— 那正是锚点跟实现一起漂的假绿来源。
+  const n = (body.match(/<SubTitle[\s>]/g) ?? []).length;
   if (n !== 4) return { ok: false, detail: `TranslateSection 里有 ${n} 个 <SubTitle>，应恰为 4（C11 判据）` };
-  const missing = ENGINE_SUBTITLES.filter((t) => !body.includes(`<SubTitle>${t}</SubTitle>`));
+  const missing = ENGINE_SUBTITLES.filter((t) => !new RegExp(`<SubTitle[^>]*>${t}</SubTitle>`).test(body));
   return {
     ok: missing.length === 0,
     detail: missing.length ? `小节标题缺字面量：${missing.join('、')}（C11 按文字校验）` : '',
@@ -1201,9 +1368,10 @@ add('ENGINE.wiring.tierConfiguredVsEffective', 'ENGINE', (ctx) => {
   const body = tsBody(ctx) ?? '';
   const problems = [];
   // 控件显示的是**已配置**（用户在这里改"下次启动用哪档"）
-  if (!/tier\.configured/.test(body)) problems.push('没读 tier.configured（控件会显示不出已配置的那一档）');
+  // 允许可选链形态 `tier?.configured`：取数边界已补齐子块，但渲染点写成可选链同样满足契约
+  if (!/tier\??\.configured/.test(body)) problems.push('没读 tier.configured（控件会显示不出已配置的那一档）');
   // 旁边小字报的是**已生效**（引擎此刻在跑哪档）
-  if (!/tier\.effective/.test(body)) problems.push('没读 tier.effective（用户看不到改动是否已生效）');
+  if (!/tier\??\.effective/.test(body)) problems.push('没读 tier.effective（用户看不到改动是否已生效）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('ENGINE.wiring.tierKeepsConfigured', 'ENGINE', (ctx) => {
@@ -1263,8 +1431,16 @@ add('ENGINE.wiring.idleNeverUnload', 'ENGINE', (ctx) => {
    */
   const code = stripComments(tsBody(ctx) ?? '');
   const problems = [];
-  if (!/className="set-idle-sub">0 = 从不卸载</.test(code)) {
-    problems.push('「0 = 从不卸载」不是卡片级共用说明（缺 .set-idle-sub 上那一句）');
+  /*
+   * 判据跟着**设计稿的形态**走：两个阈值是推理引擎卡里的两条普通行，
+   * 「0 = 从不」写在各自 catalog 的 `why` 里（与设计稿 `row()` 的 desc 逐字一致）。
+   * 两处都要断：① 两条行真的渲染了；② 两条 `why` 都带这一句。
+   */
+  const rows = (code.match(/<Row item=\{itemOf\(inference, 'idle-(llm|vision)'\)\}>/g) ?? []).length;
+  if (rows !== 2) problems.push(`空闲卸载应为两条普通行（设计稿 idle-llm / idle-vision），实际 ${rows} 条`);
+  const why = idleWhys(ctx);
+  for (const id of ['idle-llm', 'idle-vision']) {
+    if (!/0 = 从不/.test(why[id] ?? '')) problems.push(`${id} 的行内说明没写「0 = 从不」`);
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -1275,8 +1451,14 @@ add('ENGINE.wiring.visionNeedsRestart', 'ENGINE', (ctx) => {
    * 不剥的话删掉真实文案、留下注释，断言照样绿 —— 判据就被注释撑着了。
    */
   const body = stripComments(tsBody(ctx) ?? '');
-  const ok = body.includes('必须重启引擎');
-  return { ok, detail: ok ? '' : '视觉档没写明「必须重启引擎才生效」（与 LLM 档待遇不同，必须说出来）' };
+  const problems = [];
+  // 界面侧：视觉档那一行带 warning chip（设计稿 `<span class="chip chip-warning">需重启</span>`）
+  if (!/chip chip-warning">需重启</.test(body)) problems.push('视觉档那一行没有「需重启」warning chip');
+  // 文案侧：catalog 的行内说明点明"必须重启引擎"
+  if (!/必须重启引擎/.test(idleWhys(ctx)['idle-vision'] ?? '')) {
+    problems.push('视觉档的行内说明没写明「必须重启引擎」（与 LLM 档待遇不同，必须说出来）');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
 });
 add('ENGINE.wiring.restartHint', 'ENGINE', (ctx) => {
   const body = tsBody(ctx) ?? '';
@@ -1640,7 +1822,8 @@ add('ENGINE.run.drawerOps', 'ENGINE', (ctx) => {
   if (!code.includes('复制全部')) problems.push('缺「复制全部」');
   if (!code.includes('导出 .txt')) problems.push('缺「导出 .txt」');
   if (!/role="dialog"/.test(code)) problems.push('抽屉没有 dialog 语义');
-  if (!/aria-label="关闭"/.test(code)) problems.push('缺关闭按钮（或它没有无障碍名）');
+  // 关闭键的无障碍名：裸 `aria-label="关闭"` 与走 `Btn` 单元的 `ariaLabel="关闭"` 都成立
+  if (!/aria-label="关闭"|ariaLabel="关闭"/.test(code)) problems.push('缺关闭按钮（或它没有无障碍名）');
   if (!code.includes('set-run-scrim')) problems.push('缺遮罩（点遮罩关闭无处可点）');
   if (!/e\.key === 'Escape'/.test(code)) problems.push('缺 Esc 关闭');
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -2009,7 +2192,7 @@ add('ENGINE.md.noRawAsterisks', 'ENGINE', (ctx) => {
     ['sections.tsx', ctx.s.sections],
     ['EngineDiag.tsx', ctx.s.engineDiag],
     ['ModelManageBlock.tsx', ctx.s.modelManage],
-    ['CacheBlock.tsx', ctx.s.cacheBlock],
+    ['StorageBlock.tsx', ctx.s.storageBlock],
   ];
   const hits = [];
   for (const [name, src] of files) {
@@ -2034,14 +2217,19 @@ add('ENGINE.md.noRawAsterisks', 'ENGINE', (ctx) => {
 // 免得"Rust 加了字段、TS 类型没跟"这类缺口两边都漏。
 
 /**
- * 装配四段的四句用户感知文案（D-231⑥，取代 L1–L4「服务启动分层」）。
- * 🔴 与 `src/screens/library/NotReadyScreen.tsx` 的 `ASSEMBLY_PHASES` 逐字一致。
+ * 装配五段的五句用户感知文案（D-231⑥ 定四段，D-233 拆成五段）。
+ * 🔴 与 `src/screens/manga/assembly.ts` 的 `ASSEMBLY_PHASES` 逐字一致。
+ *
+ * ⚠️ 2026-10-24：段名按设计稿 `.timeline-step strong` 取短名
+ * （`运行环境` / `视觉模型` / `翻译模型`），旧写法是产品自造的长名
+ * （`运行环境装配` / `视觉模型装配` / `LLM 翻译模型装配`）。判据跟着改的是**字面值**，
+ * 不是结论 —— 五段仍然逐字冻结、仍然按序。
  */
 const NOTREADY_TEXTS = [
   ['prepare', '环境准备'],
-  ['runtime', '运行环境装配'],
-  ['visual', '视觉模型装配'],
-  ['llm', 'LLM 翻译模型装配'],
+  ['runtime', '运行环境'],
+  ['visual', '视觉模型'],
+  ['llm', '翻译模型'],
   ['ready', '就绪'],
 ];
 
@@ -2081,7 +2269,15 @@ add('NOTREADY.stages.phaseDriven', 'NOTREADY', (ctx) => {
   if (!/notes\[4\] = 'done'/.test(asm)) {
     problems.push('第五段「就绪」没有由真实判据收尾（就绪后最后一段永远停在「进行中」）');
   }
-  if (/status\?\.phase\s*\?/.test(code)) {
+  /*
+   * ⚠️ 2026-10-24：`phase` 仍**允许**出现在动作判据里（失败时给不给「重新下载模型」），
+   *    所以判据只能钉"把它当**进度**用"的那种写法 —— 也就是 `?` 直接取它当段号。
+   *    本轮按设计稿重排后，动作判据写成 `const l2Failed = failed && status?.phase === 'L2'`
+   *    （具名变量，工程纪律第 8 条禁内联长链三元），旧判据 `status?.phase ?` 会把它误判成
+   *    "又拿 phase 当进度" —— 那是**假红**。判据因此收窄成两个真正危险的形态：
+   *    ① `phase ?` 直接当条件分支出段号；② 把 phase 塞进 `notes` / `STEP_INDEX`。
+   */
+  if (/status\?\.phase\s*\?(?!\?)|notes\[[^\]]*\]\s*=\s*[^;]*phase|STEP_INDEX\s*\[[^\]]*phase/.test(code + asm)) {
     problems.push('又把 `status.phase` 当进度事实源了（它是服务启动阶段，不是装配阶段）');
   }
   if (/sidecar_port\s*\?\s*2\s*:\s*1/.test(code)) {
@@ -2164,12 +2360,27 @@ add('NOTREADY.wiring.modeDegraded', 'NOTREADY', (ctx) => {
 });
 
 add('NOTREADY.retry.byPhase', 'NOTREADY', (ctx) => {
-  /* 《02》§4「按失败阶段提供『重试当前阶段』（L2 失败给『重新下载模型』）」 */
+  /*
+   * 《02》§4「按失败阶段提供『重试当前阶段』（L2 失败给『重新下载模型』）」。
+   *
+   * ⚠️ 判据钉的是**语义**（L2 这个条件真的判了、并且真的分派了两个不同动作），
+   *    不是某一种写法。2026-10-24 按设计稿重排后这处写成具名变量
+   *    `const l2Failed = failed && status?.phase === 'L2'`（工程纪律第 8 条禁内联长链三元），
+   *    旧正则 `failed && status?.phase === 'L2'` 会因此假红。
+   *    所以改成：`L2` 判定存在 + 两个动作各自挂在它上面（一个给下载、一个给重启）。
+   */
   const code = stripComments(ctx.s.notReady);
   const problems = [];
-  if (!/failed\s*&&\s*status\?\.phase === 'L2'/.test(code)) {
+  if (!/phase === 'L2'/.test(code)) {
     problems.push('没有按失败阶段分派重试（L2 失败应给「重新下载模型」）');
   }
+  // 两个动作必须真的分叉：L2 时主按钮是「重新下载模型」，其余失败是「重启本地服务」
+  const l2DrivesDownload = /l2Failed[\s\S]{0,400}?downloadEngineModels|redownload\(/.test(code);
+  const l2DrivesRestart = /l2Failed[\s\S]{0,200}?'ghost'[\s\S]{0,200}?onRestart|onRestart[\s\S]{0,200}?l2Failed/.test(
+    code,
+  );
+  if (!l2DrivesDownload) problems.push('L2 失败没有落到「重新下载模型」这条路上');
+  if (!l2DrivesRestart) problems.push('非 L2 失败没有落到「重启本地服务」这条路上');
   if (!code.includes('downloadEngineModels')) problems.push('没有真正调用下载端点（按钮会是个摆设）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -2227,55 +2438,15 @@ add('NOTREADY.css.classes', 'NOTREADY', (ctx) => {
   };
 });
 
-add('NOTREADY.onlineForm.noInlineStyle', 'NOTREADY', (ctx) => {
-  /*
-   * 未就绪屏「使用在线翻译」卡片里的内嵌表单（`OnlineApiForm`）**不写行内样式**。
-   *
-   * 为什么单列一条：它原先整份是 `style={{…}}`（外层 column、两个 label、两个 input
-   * 各 8 条），改样式必须进 `.scss`，否则① 深色主题下写死的颜色不跟令牌走；
-   * ② 同一屏里同一种控件会有两种长相（设置页那份走 `.set-src-in`）；
-   * ③ 行内样式无法被"类名 → 样式表"这类反向判据覆盖。
-   *
-   * 🔴 判据是"不许出现 `style={`"，而不是"必须有多少个类" —— 后者会把
-   *    "换了一套行内写法"放行（那是绕过，不是迁移）。
-   */
-  const code = stripComments(ctx.s.onlineApi);
-  const problems = [];
-  const inline = [...code.matchAll(/style=\{\{/g)].length;
-  if (inline > 0) problems.push(`仍有 ${inline} 处行内样式`);
-  if (!/className="nr-form"/.test(code)) problems.push('表单没有落到 `nr-form` 类');
-  return { ok: problems.length === 0, detail: problems.join('；') };
-});
-
-add('NOTREADY.onlineForm.actsNotFullWidth', 'NOTREADY', (ctx) => {
-  /*
-   * 「保存并使用在线翻译」**不占一整行**。
-   *
-   * 为什么它会占：`.nr-form` 是 `flex-direction: column`，而 flex 容器默认
-   * `align-items: stretch` ⇒ 按钮作为**直接子项**会被拉成整行宽，一枚「保存」
-   * 看起来像一个面板而不是一个动作。所以必须有一层只放按钮的 flex 行。
-   *
-   * 🔴 组件侧与样式侧**两边都要钉**：只钉组件 ⇒ 把 `.nr-form-acts` 的
-   *    `display: flex` 去掉照样绿（那时按钮仍被 stretch）；只钉样式 ⇒ 把那层容器
-   *    删掉、按钮直接进 column 也照样绿。两边都钉才叫"验过"。
-   */
-  const code = stripComments(ctx.s.onlineApi);
-  const css = ctx.s.css;
-  const problems = [];
-  if (!/<div className="nr-form-acts">\s*<Btn/.test(code)) {
-    problems.push('保存按钮不在 `nr-form-acts` 这一层里（会作为 column 的直接子项被拉成整行）');
-  }
-  const acts = /\.nr-form-acts\s*\{([^}]*)\}/.exec(css);
-  if (!acts) problems.push('样式表没有 `.nr-form-acts` 规则');
-  else if (!/display:\s*flex/.test(acts[1])) problems.push('`.nr-form-acts` 不是 flex（按钮仍会被 stretch）');
-  return { ok: problems.length === 0, detail: problems.join('；') };
-});
-
 add('NOTREADY.timeline.derivedFromStages', 'NOTREADY', (ctx) => {
   /*
-   * 时间线**恰 4 步**，且步数与序号都由 `ASSEMBLY_PHASES` 单源派生 —— 不是写死的 1/2/3/4。
-   * 为什么要单列一条：`NOTREADY.stages.texts` 只查"那四句在不在、顺序对不对"，
+   * 时间线**恰 5 步**，且步数与序号都由 `ASSEMBLY_PHASES` 单源派生 —— 不是写死的 1/2/3/4/5。
+   * 为什么要单列一条：`NOTREADY.stages.texts` 只查"那五句在不在、顺序对不对"，
    * 它管不住"多渲染一行"或"序号写成 `i + 2`"这类**与数据脱钩**的改法。
+   *
+   * ⚠️ 2026-10-24：设计稿的时间线节点只有圆点，**不画序号**（序号在旧版竖排时间线里
+   *    才需要）。但"段号由下标派生"这条结论不能因此丢掉 —— 改成判**段号属性**：
+   *    每段都带 `data-step={i + 1}`（读屏与"第 N 段"文案都读它）。
    */
   const asm = stripComments(ctx.s.assembly);
   const tl = stripComments(ctx.s.timeline);
@@ -2283,7 +2454,8 @@ add('NOTREADY.timeline.derivedFromStages', 'NOTREADY', (ctx) => {
   const ids = [...asm.matchAll(/id: '(prepare|runtime|visual|llm|ready)'/g)].map((m) => m[1]);
   if (ids.length !== 5) problems.push(`ASSEMBLY_PHASES 不是 5 段（实为 ${ids.length}：${ids.join('/') || '无'}）`);
   if (!/ASSEMBLY_PHASES\.map\(/.test(tl)) problems.push('时间线不是由 ASSEMBLY_PHASES 渲染的（步数会与数据脱钩）');
-  if (!/i \+ 1/.test(tl)) problems.push('节点序号不是下标派生（i + 1）');
+  if (!/i \+ 1/.test(tl)) problems.push('段号不是下标派生（i + 1）');
+  if (!/data-step=\{step\}/.test(tl)) problems.push('段号没有真的落到节点上（算了却没用）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2291,20 +2463,26 @@ add('NOTREADY.timeline.explicitLoading', 'NOTREADY', (ctx) => {
   /*
    * 本屏新增的**显式 loading 态**（用户诉求：现有四态之外补 loading）。
    * 判据分两半，缺一不可：
-   *   ① 组件侧：「进行中」必须映射到 `is-loading` —— 状态词与形态收在一处；
-   *   ② 样式侧：`.tl-node.is-loading::after` 必须真挂着**旋转动画**。
+   *   ① 组件侧：「进行中」必须落到一个**具名的节点形态**上（旧版 `is-loading`，
+   *      2026-10-24 按设计稿重排后是 `data-state="active"` —— 两者都算，因为结论是
+   *      "进行中有一个专属形态"，不是"必须叫某个类名"）；
+   *   ② 样式侧：那个形态必须真挂着**脉冲/旋转动画**。
    * 只查 ① 会漏"类名对、圈不转"；只查 ② 会漏"样式在、根本没有一段代码进入这个态"。
-   * 旋转是用户区分"在动"与"卡住了"的**唯一**信号 —— 不动的「进行中」看起来与卡住一样。
+   * 动起来是用户区分"在动"与"卡住了"的**唯一**信号 —— 不动的「进行中」看起来与卡住一样。
    */
   const tl = stripComments(ctx.s.timeline);
   const css = ctx.s.css;
   const problems = [];
-  if (!/active:\s*'is-loading'/.test(tl)) problems.push('「进行中」没有映射到 is-loading');
-  if (!/\.tl-node\.is-loading\s*\{/.test(css)) problems.push('样式表没有 .tl-node.is-loading 规则');
-  if (!/\.tl-node\.is-loading::after\s*\{[^}]*animation:\s*tlspin/.test(css)) {
-    problems.push('节点外圈没有挂旋转动画（「进行中」会与"卡住了"看起来一模一样）');
-  }
-  if (!/@keyframes\s+tlspin\s*\{/.test(css)) problems.push('没有 @keyframes tlspin');
+  const hasNodeKind = /active:\s*'is-loading'/.test(tl) || /data-state=\{note\}/.test(tl);
+  if (!hasNodeKind) problems.push('「进行中」没有落到专属节点形态上（is-loading / data-state）');
+  const hasActiveRule =
+    /\.tl-node\.is-loading\s*\{/.test(css) || /\.timeline-step\[data-state='active'\]\s+\.timeline-node\s*\{/.test(css);
+  if (!hasActiveRule) problems.push('样式表没有「进行中」的节点规则');
+  const hasSpin =
+    /\.tl-node\.is-loading::after\s*\{[^}]*animation:\s*tlspin/.test(css) ||
+    /\.timeline-step\[data-state='active'\][^{]*\{[^}]*animation:\s*miao-pulse-node/.test(css);
+  if (!hasSpin) problems.push('节点没有挂动画（「进行中」会与"卡住了"看起来一模一样）');
+  if (!/@keyframes\s+(tlspin|miao-pulse-node)\s*\{/.test(css)) problems.push('没有对应的 @keyframes');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2348,97 +2526,69 @@ add('NOTREADY.phase.readyTerminal', 'NOTREADY', (ctx) => {
 // 「十三项接真实能力」，这九条守的是「同一批能力换了一种更短的说法」。
 // 混在一起，回归时就分不清是"能力掉了"还是"话又变长了"。
 
-/** 比对摘要与原文前，两侧都去掉空白与 `**` —— 星号是强调标记，不是内容 */
-const normNote = (t) =>
-  String(t ?? '')
-    .replace(/\s+/g, '')
-    .replace(/\*\*/g, '');
-
-add('SIMPLIFY.notesummary.verbatim', 'SIMPLIFY', (ctx) => {
+add('SIMPLIFY.note.verbatim', 'SIMPLIFY', (ctx) => {
   /*
-   * 「摘要不得成为新的承诺」的可执行形式。
+   * 组说明**全文直出**（设计稿 `.s-note`：一枚虚线小盒，没有折叠也没有摘要）。
    *
-   * `noteSummary` 是折叠态**唯一**可见的那一行（要再点一次「为什么 ?」才看到全文）。
-   * 抽句抽错一个词，用户看到的就是一句原文里根本没有的话 —— 而它是这组的门面。
-   * 判据：按 ` · ` 切段，去掉空白与 `**` 后，**每段都必须能在 `note` 原文里逐字找到**。
-   * 于是三类改错同时变红：① 摘要里出现 note 没写过的说法；② note 改了、摘要没跟；
-   * ③ 摘要写成空串 / 一段都切不出来（空转）。
+   * 产品曾有一层「一行摘要 + 『为什么 ?』抽屉」，摘要与原文并存 ⇒ 同一件事有两份说法，
+   * 迟早对不上。这一轮按设计稿删掉那层结构，于是判据变成：
+   *   ① catalog 里**不再有** `noteSummary` 字段（数据侧不留死字段，也不许换个名字回潮）；
+   *   ② 每条 `note` 非空的组，渲染层必须把**原文本身**作为 children 传进去
+   *      （`{X.note as string}`），而不是某个被加工过的短句。
+   * 分母写死 5 组 + 下限防空转（全页不能一个组说明都没有 —— 那是产品决策，不该被顺手带走）。
    */
   const dataErr = CAT_ERR(ctx.cat);
   if (dataErr) return { ok: false, detail: dataErr };
   const secs = ctx.cat.mod.SETTINGS_SECTIONS ?? [];
   const problems = [];
-  let pairs = 0;
-  for (const sec of secs) {
-    const note = typeof sec?.note === 'string' ? sec.note : '';
-    const sum = typeof sec?.noteSummary === 'string' ? sec.noteSummary : '';
-    if (!note) {
-      // 组说明可以省略（省略即该组不渲染 GroupNote）；但留了摘要却没留说明，是数据残缺
-      if (sum.trim()) problems.push(`${sec.id} 有摘要却没有组说明（摘要无源）`);
-      continue;
-    }
-    if (!sum.trim()) {
-      problems.push(`${sec.id} 没有一行摘要（noteSummary）—— 组说明会照旧铺满 6 行`);
-      continue;
-    }
-    pairs++;
-    const segs = sum
-      .split('·')
-      .map((x) => x.trim())
-      .filter(Boolean);
-    if (!segs.length) {
-      problems.push(`${sec.id} 的 noteSummary 切不出一段（空转）`);
-      continue;
-    }
-    for (const seg of segs) {
-      if (!normNote(note).includes(normNote(seg))) {
-        problems.push(`${sec.id} 摘要里的「${seg}」在 note 原文里找不到（摘要成了新的承诺）`);
-      }
-    }
-  }
-  /*
-   * 政策（D-134）：组说明**可与不可** —— 不写就不渲染 GroupNote（小节的说明可省略）。
-   * 但凡**有**组说明的分组，必须同时配一行摘要（`withNote === pairs`），
-   * 且摘要每一段都逐字取自说明（上面的循环负责）。
-   * 分母仍写死：5 个分组不许变；另留一条下限防空转 —— 全页不能一个组说明都没有
-   * （那是把「组级说明」这一形态整体删掉，属产品决策，不该被一次文案精简顺手带走）。
-   */
-  const withNote = secs.filter((s) => typeof s?.note === 'string' && !!s.note.trim()).length;
   if (secs.length !== 5) problems.push(`分组数 ${secs.length}，应为 5`);
-  if (withNote === 0) problems.push('所有分组都没有组说明 —— 组级说明这一形态被整体移除了');
-  if (withNote !== pairs) problems.push(`有 ${withNote} 组带组说明，但只有 ${pairs} 组配了一行摘要`);
+  const withNote = secs.filter((x) => typeof x?.note === 'string' && !!x.note.trim());
+  if (withNote.length === 0) problems.push('所有分组都没有组说明 —— 组级说明这一形态被整体移除了');
+  // ① 数据侧不许再有摘要字段
+  for (const sec of secs) {
+    if ('noteSummary' in sec) problems.push(`${sec.id} 仍带 noteSummary 字段（摘要层没删干净）`);
+  }
+  // ② 渲染层传的是原文
+  const calls = ctx.s.sections.match(/<GroupNote[^>]*>\{[^}]*\}<\/GroupNote>/g) ?? [];
+  if (calls.length !== secs.length) {
+    problems.push(`sections.tsx 里带原文的 <GroupNote> 有 ${calls.length} 个，应为 ${secs.length}`);
+  }
+  const wrong = calls.filter((c) => !/\{[A-Z_]+\.note as string\}/.test(c));
+  if (wrong.length) problems.push(`${wrong.length} 个 <GroupNote> 传的不是组说明原文（摘要层回潮）`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
-
-add('SIMPLIFY.notesummary.wired', 'SIMPLIFY', (ctx) => {
+add('SIMPLIFY.note.box', 'SIMPLIFY', (ctx) => {
   /*
-   * 数据侧有 `noteSummary` ≠ 界面上会折叠。要防的假绿有两层：
-   *   ① 只有数据、`GroupNote` 收不到 `summary` ⇒ 照旧铺全文（= 这一轮白做）；
-   *   ② 传是传了，但组件把 `summary` 无视、永远渲染全文 ⇒ 同上，且**更难发现**。
-   * 所以两头都断：每组都必须把摘要传进去；组件必须有"没给摘要就不折叠"的退路。
+   * 数据对了 ≠ 界面对了。这一条守**盒子本身**是设计稿那一个：
+   *   · 结构：`.set-note-inline`（flex + 13px 图标 + 一段文字），没有折叠按钮、没有摘要元素；
+   *   · 位置：在**组尾**（设计稿把 `.s-note` 放在所有卡片之后，而不是组首）。
+   * 三处各挡一类假绿：删了盒子（①）、盒子在但结构回退成"摘要+按钮"（②）、
+   * 盒子对但被挪回组首（③）。
    */
-  const dataErr = CAT_ERR(ctx.cat);
-  if (dataErr) return { ok: false, detail: dataErr };
-  // 分母 = **分组总数**（D-136 起五组都各写一行 <GroupNote>，显隐改由组件自守 ——
-  // 与"某组有没有 note"解耦；缺 note 的组由 GroupNote 自己 return null）
-  const n = (ctx.cat.mod.SETTINGS_SECTIONS ?? []).length;
   const problems = [];
-  // 逐个 `<GroupNote …>` 标签看它有没有带 summary（不锁常量名，重构改名不会误红）
-  const calls = ctx.s.sections.match(/<GroupNote[^>]*>/g) ?? [];
-  if (calls.length !== n) problems.push(`sections.tsx 里有 ${calls.length} 个 <GroupNote>，应为 ${n}（每组一行）`);
-  const noSum = calls.filter((c) => !/summary=\{[\w$]+\.noteSummary\}/.test(c));
-  if (noSum.length) {
-    problems.push(`${noSum.length} 个 <GroupNote> 没接摘要（数据是死的，界面照旧铺全文）`);
-  }
   const gb = fnBody(ctx.s.parts, 'GroupNote');
   if (!gb) problems.push('parts.tsx 里找不到 GroupNote 的实现体');
   else {
-    if (!/if\s*\(!summary\)/.test(gb)) problems.push('GroupNote 没有"没给摘要就不折叠"的退路');
-    if (!gb.includes('set-note-more')) problems.push('GroupNote 没有渲染「为什么 ?」按钮');
+    if (!/className="set-note-inline"/.test(gb)) {
+      problems.push('GroupNote 渲染的不是设计稿那个 .s-note 盒（缺 .set-note-inline）');
+    }
+    if (!/<Info\b/.test(gb)) problems.push('组说明盒缺 13px 的信息图标（设计稿 .s-note .ico）');
+    for (const dead of ['set-note-sum', 'set-note-more', 'summary=']) {
+      if (gb.includes(dead)) problems.push(`GroupNote 里仍有已删除的折叠残件：${dead}`);
+    }
   }
+  // 位置：五组的 <GroupNote> 都必须排在**最后一个 .set-group 之后**
+  const secs = ctx.s.sections.split(/^export function /m).filter((x) => x.includes('<GroupNote'));
+  let misordered = 0;
+  for (const body of secs) {
+    const iNote = body.indexOf('<GroupNote');
+    const iLastGroup = body.lastIndexOf('<SubTitle');
+    if (iLastGroup < 0) continue;
+    if (iNote < iLastGroup) misordered += 1;
+  }
+  if (misordered) problems.push(`${misordered} 个分组的组说明排在卡片之前（设计稿在组尾）`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
-
 add('SIMPLIFY.optional.selfGuard', 'SIMPLIFY', (ctx) => {
   /*
    * 政策：**缺字段 ⇒ 不渲染对应那一行**。`note`（组说明）与 `blurb`（页标题下的描述）
@@ -2461,7 +2611,8 @@ add('SIMPLIFY.optional.selfGuard', 'SIMPLIFY', (ctx) => {
     problems.push('GroupNote 没有"缺组说明就不渲染"的自守（缺 note 会崩或留空行）');
   }
   const ss = stripComments(ctx.s.settingsScreen ?? '');
-  if (!/active\.blurb\s*[?&]/.test(ss)) {
+  // `active` 在新增「番剧设置」（域内第 6 组）后可为 null ⇒ 守卫写成 `active?.blurb ?`
+  if (!/active\??\.blurb\s*[?&]/.test(ss)) {
     problems.push('SettingsScreen 的 blurb 是无条件渲染（缺 blurb 会崩或留空行）');
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
@@ -2501,32 +2652,27 @@ add('SIMPLIFY.why.oneLine', 'SIMPLIFY', (ctx) => {
 
 add('SIMPLIFY.idle.card', 'SIMPLIFY', (ctx) => {
   /*
-   * 两个空闲卸载阈值**合成一张卡**（R3）—— 但这是**渲染分组**，不是**合并数据项**。
+   * 两个空闲卸载阈值 = **推理引擎卡里的两条普通行**（设计稿 `idle-llm` / `idle-vision`）。
    *
-   * 这两件事看起来一样、后果完全不同：把两项并成一项，全表项数会少 1，
-   * 左栏计数与 `SPEC_ITEM_TOTAL` 一起漂 —— 而卡片照样渲染得很好看。
-   * 所以两头都断：catalog 里两项**必须都还在**，界面上必须是**一行一个**的两行卡。
-   *
-   * 另一件不能丢的事：两档待遇不同（LLM 即时 / 视觉需重启）—— 原来是两段散文各讲一遍，
-   * 现在是右端两枚 chip + 一句共用注解。讲法变了，"必须说出来"这条不变，
-   * 因为它是用户理解"为什么只有一档提示要重启"的唯一依据。
+   * 产品曾把它们合成一张自造的「空闲卸载」卡（R3）。合卡的代价不是少写两行散文，
+   * 而是**结构**变了：设计稿里这两项是同一张卡的第 5、6 条 `.s-row`，行序、行数、
+   * 右列与相邻行的关系都是"一组并列的行"；合成卡片后它们独立成一格，整组读起来
+   * 就不是设计稿那一份东西了。所以这里断三件：
+   *   ① catalog 两项都在（合卡曾经也不许合并数据项）；
+   *   ② 界面是两条 `<Row>`（不是自造容器、也不是一条）；
+   *   ③ 视觉档的「需重启」说得出来（warning chip）—— 它是两档唯一的差别。
    */
   const { err, items } = translateItems(ctx);
   if (err) return { ok: false, detail: err };
   const problems = [];
   for (const id of ['idle-llm', 'idle-vision']) {
-    if (!items.some((i) => i.id === id)) {
-      problems.push(`catalog 里缺项 ${id}（合卡不该把两个数据项并成一个）`);
-    }
+    if (!items.some((i) => i.id === id)) problems.push(`catalog 里缺项 ${id}`);
   }
   const body = stripComments(tsBody(ctx) ?? '');
-  const lines = (body.match(/className="set-idle-line"/g) ?? []).length;
-  if (lines !== 2) problems.push(`合卡里的行数 ${lines}，应为 2（两个阈值各一行）`);
-  if (!body.includes('set-idle-tag is-now')) problems.push('缺 LLM 档「保存后立刻生效」的标记');
-  if (!body.includes('set-idle-tag is-restart')) problems.push('缺视觉档「需重启引擎」的标记');
-  if (!body.includes('必须重启引擎')) {
-    problems.push('没有说明两档待遇不同（用户无法理解为何只有一档要重启）');
-  }
+  const rows = (body.match(/<Row item=\{itemOf\(inference, 'idle-(llm|vision)'\)\}>/g) ?? []).length;
+  if (rows !== 2) problems.push(`空闲卸载的行数 ${rows}，应为 2（两条普通 Row）`);
+  if (/className="set-idle-line"/.test(body)) problems.push('仍在用自造的 .set-idle-line（设计稿是普通行）');
+  if (!/chip chip-warning">需重启</.test(body)) problems.push('视觉档缺「需重启」warning chip');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2656,8 +2802,8 @@ add('SIMPLIFY.translate.noSpecRefs', 'SIMPLIFY', (ctx) => {
       probe(`项 ${it.id}.def`, it.def);
     }
   const body = stripComments(ctx.s.sections);
-  const a = body.indexOf('<SubTitle>翻译来源');
-  const b = a < 0 ? -1 : body.indexOf('<SubTitle>服务与配对', a);
+  const a = body.indexOf('翻译链路');
+  const b = a < 0 ? -1 : body.indexOf('服务与配对', a);
   if (a < 0 || b < 0) problems.push('sections.tsx 里「翻译来源」小节边界找不到（判据圈不住）');
   else probe('sections 翻译来源 JSX', body.slice(a, b));
   problems.push(...hits.map((h) => `仍有需求/设计稿引用：${h}`));
@@ -2736,7 +2882,12 @@ add('SIMPLIFY.select.pulledRight', 'SIMPLIFY', (ctx) => {
     }
   }
   if (nth !== 3) problems.push(`② 两栏行里的下拉有 ${nth} 枚，应为 3（翻译来源 / 翻译档位 / 加速后端）`);
-  if (ctl !== 3) problems.push(`② 两栏行里的控件旁注解有 ${ctl} 枚，应为 3`);
+  /*
+   * 设计稿这两枚附注在 `idle-llm` / `idle-vision` 两行上（`分钟 · 0–1440`，上界必须写出来），
+   * 加上档位 / 后端旁的 3 枚，全组共 5 枚。分母写死：少一枚说明某行的上界没写，
+   * 多一枚说明有人又往行里塞了第二句注解。
+   */
+  if (ctl !== 5) problems.push(`② 两栏行里的控件旁注解有 ${ctl} 枚，应为 5（档位/后端 3 + 两条空闲卸载各 1）`);
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2757,7 +2908,10 @@ add('SIMPLIFY.diag.foldedByDefault', 'SIMPLIFY', (ctx) => {
     problems.push('「诊断详情」不是默认收起（open 的初值应为 false）');
   }
   if (!/className="set-run-fold"/.test(code)) problems.push('没有「诊断详情」的折叠开关');
-  if (!/aria-expanded=\{open\}/.test(code)) problems.push('折叠开关没有 aria-expanded（读屏用户不知道展开了没）');
+  // 判据看的是"折叠开关有没有把展开态交出去"：裸 `aria-expanded={open}` 与
+  // 走 `Btn` 单元的 `ariaExpanded={open}` 都成立（单元内部落成同一个 aria 属性）。
+  if (!/aria-expanded=\{open\}|ariaExpanded=\{open\}/.test(code))
+    problems.push('折叠开关没有 aria-expanded（读屏用户不知道展开了没）');
   // 折叠体必须真的被 open 门住（否则"折叠"只是个装饰）
   if (!/\{open\s*\?\s*\(/.test(code)) problems.push('折叠体没有被 open 门住（会一直全量渲染）');
   if ((code.match(/className="set-state is-chip"/g) ?? []).length !== 3) {
@@ -2821,7 +2975,9 @@ add('FEATURES.def.rendered', 'FEATURES', (ctx) => {
   const parts = stripComments(ctx.s.parts);
   const problems = [];
   if (!/item\.def\s*\?\s*<DefaultChip/.test(parts)) problems.push('Row 没有按 item.def 渲染 DefaultChip');
-  if (!/默认：\{value\}/.test(parts)) problems.push('DefaultChip 没有写「默认：」前缀（只写值会被读成"你现在是这个"）');
+  // 文案取设计稿原文「默认 X」（`<span class="default-chip">默认 ${def}</span>`）：
+  // 只写值会被读成"你现在是这个"，所以前缀必须在；分隔符跟随设计稿，不加冒号
+  if (!/默认 \{value\}/.test(parts)) problems.push('DefaultChip 没有写「默认」前缀（只写值会被读成"你现在是这个"）');
   if (!/title=\{[^}]*出厂默认/.test(parts)) problems.push('DefaultChip 没有说明"这不是你当前的设置"');
   if (!/\.set-row-def\s*\{/.test(ctx.s.css)) problems.push('缺少 .set-row-def 样式');
   if (!/\.set-row-def\s*\{[^}]*flex:\s*0 0 auto/.test(ctx.s.css))
@@ -2883,9 +3039,16 @@ add('FEATURES.shell.sidebarBranch', 'FEATURES', (ctx) => {
   const problems = [];
   if (!/labels\s*\?\s*SIDEBAR\.appItem\s*:\s*SIDEBAR\.iconOnlyItem/.test(src))
     problems.push('几何没有随 labels 切换（appItem ↔ iconOnlyItem）');
-  if (!/\{labels\s*\?\s*<span>\{a\.label\}<\/span>\s*:\s*null\}/.test(src))
+  if (!/\{labels\s*\?\s*<span(?:\s+className="nav-label")?>\{a\.label\}<\/span>\s*:\s*null\}/.test(src))
     problems.push('「有没有文字」与「用哪套几何」不是同一个判断的两个输出');
-  if (!/aria-label=\{a\.label\}/.test(src)) problems.push('应用入口缺少 aria-label（关掉文字后它是唯一可读名称）');
+  /*
+   * 应用入口的无障碍名。
+   * ⚠️ 两种写法都接受：裸 `<button aria-label={a.label}>` 与 `Btn` 单元的
+   * `ariaLabel={a.label}`（后者由单元统一渲染成前者）。判据守的是"读屏能听到名字"，
+   * 不是"用哪种写法"—— 2026-10-24 侧栏统一改用 Btn 时这里红过一次。
+   */
+  if (!/aria-label=\{a\.label\}/.test(src) && !/ariaLabel=\{a\.label\}/.test(src))
+    problems.push('应用入口缺少 aria-label（关掉文字后它是唯一可读名称）');
   // 几何必须来自 tokens：组件里出现裸数字就意味着有了第二个来源
   const hard = src.match(/(?:width|height):\s*\d+px?/g) ?? [];
   if (hard.length > 0) problems.push(`出现 ${hard.length} 处硬编码宽高（${hard[0]}…）`);
@@ -2916,25 +3079,44 @@ add('FEATURES.shell.wired', 'FEATURES', (ctx) => {
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
-// ② 存储占用：三行分列、**不合计**。
+// ② 存储占用：两行分列、**不合计**。
 add('FEATURES.storage.rows', 'FEATURES', (ctx) => {
   const src = stripComments(ctx.s.storageBlock);
   const problems = [];
   const rows = (src.match(/className="set-storage-row"/g) ?? []).length;
-  if (rows !== 3) problems.push(`三行分列应有 3 个 .set-storage-row，实际 ${rows} 个`);
-  for (const k of ['译文库', '音频缓存', '模型']) {
+  /*
+   * 🔴 2026-10-25：从三行收成**两行**（译文库 / 音乐缓存）。
+   *    「翻译模型」那一行去掉了 —— 它长期只有 `未统计`（服务侧没有"模型占了多少"
+   *    的接口），留一行"读不出来"的数字只是占位。只要那条接口出现，这一行就该加回来。
+   *    所以这里判 2，且**不再要求** `未统计` / `缺少接口`（那两个词已随行消失）。
+   */
+  if (rows !== 2) problems.push(`两行分列应有 2 个 .set-storage-row，实际 ${rows} 个`);
+  for (const k of ['译文库', '音乐缓存']) {
     if (!src.includes(k)) problems.push(`缺少「${k}」那一行`);
   }
-  if (!src.includes('不合计')) problems.push('没有把"不合计"这条立场说出来');
+  if (src.includes('翻译模型')) problems.push('「翻译模型」那一行已按要求去掉，不该再出现');
   /*
    * 不得求和 —— 有人会顺手 `.reduce((a, b) => a + b.total, 0)` 造一个"总占用"，
    * 那等于把**没有接口的那一处**当成 0 算进去。这条断言就是拦它的。
    */
   if (/reduce\(/.test(src)) problems.push('源码里出现了求和（合计会把没有接口的那一处当成 0）');
-  if (!src.includes('未统计')) problems.push('模型那一行没有如实标「未统计」');
-  if (!src.includes('缺少接口')) problems.push('模型那一行没有说明缺的是哪条接口');
   if (!/musicCacheStats/.test(src)) problems.push('音频缓存没有走 musicCacheStats（会变成第二套口径）');
-  if (!/lib\.totalBytes/.test(src)) problems.push('译文库没有用传进来的 lib.totalBytes');
+  /*
+   * 🔴 两行中列统一成「名称 + 目录地址」，右列统一是读数：
+   *    用户问的三件事是"占多少 / 在哪儿 / 怎么清" —— 两个读数放右列、
+   *    路径放中列第二行且可点击打开。
+   */
+  const dirs = (src.match(/className="set-storage-dir"/g) ?? []).length;
+  if (dirs < 2) problems.push(`两行应各有一个目录地址入口（set-storage-dir），实际 ${dirs} 个`);
+  if (!/lib\?\.root/.test(src)) problems.push('译文库没有用传进来的 lib.root 做目录入口');
+  // 两行右列都要有读数（译文库 libText / 音乐缓存 cacheText）
+  if (!/set-storage-size/.test(src)) problems.push('右列没有读数（set-storage-size）');
+  /*
+   * 🔴 判据锚在**渲染点**上（`{libText}` 真的被插进 `set-storage-size` 那一格），
+   *    不是"文件里有 libText 这个词"：只查词的话，把变量改名、或把它从 JSX 里摘掉
+   *    都测不出来（本轮回证抓到过这个假阳性）。
+   */
+  if (!/\{libText\}/.test(src)) problems.push('译文库右侧没有显示大小（渲染点缺 {libText}）');
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
 
@@ -2951,19 +3133,25 @@ add('FEATURES.storage.wired', 'FEATURES', (ctx) => {
   if (!/StorageBlock item=\{item\} lib=\{lib\}/.test(sec)) problems.push('④ 组没有把 lib 交给 StorageBlock');
   /*
    * storage-usage 自己必须是 live —— 否则「三行分列做了、却仍标待接入」能蒙过去。
-   * 这一句与下面那个循环方向相反：那两个**必须仍是 pending**，这一个**必须是 live**。
-   * 早先只查了下面两个、漏了它自己，反证轮里「把 storage-usage 退回 pending」那一条
+   * 这一句与下面那个循环方向相反：那个**必须仍是 pending**，这一个**必须是 live**。
+   * 早先只查了下面那个、漏了它自己，反证轮里「把 storage-usage 退回 pending」那一条
    * 便退化成假阳性（破坏做了、断言不红）。别再把它并进下面那个循环。
    */
   const usage = itemById(ctx.cat.mod, 'storage-usage');
   if (!usage) problems.push('catalog 里找不到 storage-usage');
   else if (usage.state !== 'live')
     problems.push(`storage-usage 仍是 ${usage.state}（三行分列已接真实能力，不该再标待接入）`);
-  for (const id of ['temp-files', 'oss-feedback']) {
+  /*
+   * 🔴 2026-10-25：④ 的「清理」卡与 `temp-files` 项一并移除（用户要求）。
+   *    `temp-files` 至今 `pending`（服务侧没有列举与清理接口），留着只是占位；
+   *    投放规则那句脚注也一起删了（"规则不在设置里"对用户没有信息量）。
+   *    所以这里**不再**断言 temp-files 存在 —— 它已不是本组的项。
+   *    `oss-feedback`（⑤ 关于）不受影响，仍必须 pending。
+   */
+  for (const id of ['oss-feedback']) {
     const it = itemById(ctx.cat.mod, id);
     if (!it) problems.push(`catalog 里找不到 ${id}`);
-    else if (it.state !== 'pending')
-      problems.push(`${id} 不该变成 ${it.state}（服务端接口 / 公开发布这两件事都还不存在）`);
+    else if (it.state !== 'pending') problems.push(`${id} 不该变成 ${it.state}（公开发布这件事还不存在）`);
   }
   return { ok: problems.length === 0, detail: problems.join('；') };
 });
@@ -3240,17 +3428,29 @@ const MUTATIONS = [
   {
     name: '把 quality 项从 MEDIA 里删掉（模拟「该补的没补」）',
     file: F.catalog,
-    find: "        { id: 'quality', label: '音质档位', state: 'live', def: '高清臻音' },\n",
+    find:
+      '        {\n' +
+      "          id: 'quality',\n" +
+      "          label: '音质档位',\n" +
+      "          state: 'live',\n" +
+      "          def: '高清臻音',\n" +
+      '          // 设计稿渲染进界面的那句（不是它内部索引表里的「标准 / 极高 / …」）\n' +
+      "          why: '更高档位需要平台会员；不可用的音质会自动降级',\n" +
+      '        },\n',
     replace: '',
     expect: ['ADDED.quality'],
   },
   {
     name: '把 audio-output 项加回 catalog（模拟「剔除了的又回来了」）',
     file: F.catalog,
-    find: "        { id: 'quality', label: '音质档位', state: 'live', def: '高清臻音' },",
+    find: "          id: 'quality',\r\n",
     replace:
-      "        { id: 'quality', label: '音质档位', state: 'live', def: '高清臻音' },\n" +
-      "        { id: 'audio-output', label: '音频输出', state: 'pending', why: '反证' },",
+      "          id: 'quality',\r\n" +
+      "          label: '音频输出',\r\n" +
+      "          state: 'pending',\r\n" +
+      "          why: '反证',\r\n" +
+      '        },\r\n' +
+      '        {\r\n',
     expect: ['EXCLUDED.audio-output'],
   },
   {
@@ -3259,14 +3459,16 @@ const MUTATIONS = [
     // ⚠️ 锚点必须与 catalog 的真实字节一致 —— 常量每变一次（29→31→32→33→31→32→**33**→**34**）
     // 都要同步这里，否则本行会退化成「锚点未找到 / 跳过」，看起来仍是全绿（跳过 ≠ 通过）。
     // 实测：漏同步时这条确实静默跳过过（详见台账 D-94 的反证轮复修记录）。
-    find: 'export const SPEC_ITEM_TOTAL = 34;',
+    find: 'export const SPEC_ITEM_TOTAL = 32;',
     replace: 'export const SPEC_ITEM_TOTAL = 26;',
     expect: ['COUNT.specMatches'],
   },
   {
     name: '把「缓存清理」项加回 RESOURCE（模拟拍板删掉的项又回来了）',
     file: F.catalog,
-    find: "        {\n          id: 'temp-files',",
+    // 🔴 2026-10-25：`temp-files` 已从 catalog 删掉（「清理」卡一并移除），
+    //    原锚点 `id: 'temp-files',` 不复存在 ⇒ 改锚在 `storage-usage` 之后插入。
+    find: "        {\n          id: 'storage-usage',",
     replace:
       '        {\n' +
       "          id: 'cache-clean',\n" +
@@ -3275,7 +3477,7 @@ const MUTATIONS = [
       "          why: '反证',\n" +
       '        },\n' +
       '        {\n' +
-      "          id: 'temp-files',",
+      "          id: 'storage-usage',",
     expect: ['RETIRED.cache-clean'],
   },
   {
@@ -3291,6 +3493,27 @@ const MUTATIONS = [
     find: "  stopping: { text: '正在停止', colorVar: '--md-muted' },\n",
     replace: '',
     expect: ['NOTREADY.state.fiveStates'],
+  },
+  {
+    name: '把歌词高亮方式换回下拉（设计稿的分段控件被"换皮"成要点开才看得见的形态）',
+    file: F.secMedia,
+    find: '          <Segmented label={item.label} value={lyricsMode}',
+    replace: '          <Select label={item.label} value={lyricsMode}',
+    expect: ['ADDED.segControls'],
+  },
+  {
+    name: '把「音乐账号」卡挂回 MediaSection（本轮要求删掉，挂回去就该红）',
+    file: F.secMedia,
+    find: '      {MEDIA.groups.map((g) => (',
+    replace: '      <AccountCardsBlock />\n      {MEDIA.groups.map((g) => (',
+    expect: ['ADDED.accountCards'],
+  },
+  {
+    name: '把 AccountCardsBlock.tsx 恢复（删掉的组件又冒出来＝死代码）',
+    file: F.secMedia,
+    find: '      {MEDIA.groups.map((g) => (',
+    replace: '      <AccountCardsBlock />\n      {MEDIA.groups.map((g) => (',
+    expect: ['ADDED.accountCards'],
   },
   {
     name: '把 MediaSection 的遍历改回 MEDIA.groups[0]（只渲染第一小节）',
@@ -3413,49 +3636,54 @@ const MUTATIONS = [
    * 但渲染时被 Row 压扁 / 压根没渲染」—— 而这正是它当初要脱离 `Row` 的理由。
    */
   {
-    name: '把「音乐缓存」项整条从 catalog 里删掉（模拟「加了项但忘了算进项数」）',
+    name: '把「存储占用」项整条从 catalog 里删掉（模拟「加了项但忘了算进项数」）',
     file: F.catalog,
-    // 整条（含 id/label/state/layout）一起删 —— 只改 id 的话项还在，
-    // COUNT.total 仍然对得上（那是**正确**的行为，不是假阳性）。
-    // 判据是「真的导入 catalog 求和」，所以只有项真的少了它才会红。
-    find:
-      '        {\n' +
-      "          id: 'music-cache',\n" +
-      "          label: '音乐缓存',\n" +
-      "          state: 'live',\n" +
-      '          // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）\n' +
-      "          layout: 'block',\n" +
-      '          why:\n' +
-      "            '在线播放的歌词与整首歌会落盘缓存，这里能看占用、按平台清除、打开缓存目录。' +\n" +
-      "            '只统计**在线歌曲**的缓存 —— 你自己导入的本地文件不在其中。',\n" +
-      '        },\n',
-    replace: '',
-    expect: ['ADDED.music-cache', 'COUNT.total'],
-  },
-  {
-    name: '把「音乐缓存」的 layout 形态字段去掉（会被 Row 压成两栏窄列，四格失效）',
-    file: F.catalog,
-    find: "          // 四格块：塞不进 Row 的窄右列（见 SettingItem.layout 的注释）\n          layout: 'block',\n",
+    // 🔴 2026-10-25：`music-cache` 已不是独立项（收进 storage-usage 行内），
+    //    故这条反证的靶子换成 `storage-usage` 本身 —— 它现在是 ④ 唯一的项，
+    //    「删掉唯一那项」正是这条要模拟的"项没了但没人发现"。
+    find: "          id: 'storage-usage',\r\n          label: '存储占用',\r\n",
     replace: '',
     expect: ['CACHE.layoutFlag'],
   },
+
   {
-    name: '把 sections.tsx 里 music-cache 的 case 改错（四格块不会被渲染）',
-    file: F.secMedia,
-    find: "      case 'music-cache':",
-    replace: "      case 'music-cache-off':",
-    expect: ['WIRING.item.music-cache'],
+    name: '把「存储占用」的 layout 形态字段去掉（会被 Row 压成两栏窄列，三行失效）',
+    file: F.catalog,
+    find: "          layout: 'block',\n        },\n      ],\n    },\n  ],\n};",
+    replace: '        },\n      ],\n    },\n  ],\n};',
+    expect: ['CACHE.layoutFlag'],
+  },
+  {
+    name: '把音乐缓存那一行的清理入口摘掉（行在但用户清不了）',
+    file: F.storageBlock,
+    find: '            <MenuButton',
+    replace: '            <span data-dead="1"',
+    expect: ['CACHE.blockRendersFourCells'],
+  },
+  {
+    name: '把音乐缓存那一行的目录地址入口摘掉（用户看不到"在哪儿"）',
+    file: F.storageBlock,
+    /*
+     * `{root ? (` → `{false ? (`：恒走 else 分支，音乐缓存行内不再渲染目录入口。
+     * ⚠️ 三个条件各自唯一（`{root ?` / `{lib?.root ?` / `{modelRoot ?`），
+     *    所以这一处替换只影响音乐缓存那行 —— 裸换 `set-storage-dir` 会把三行都换掉，
+     *    于是"音乐缓存行内仍有入口"⇒ 该红没红（本轮回证抓到过两次）。
+     */
+    find: '{root ? (',
+    replace: '{false ? (',
+    expect: ['CACHE.blockRendersFourCells'],
   },
   {
     name: '把「歌词高亮方式」项整条从 catalog 里删掉（模拟「加了项但忘了算进项数」）',
     file: F.catalog,
     find:
-      '        {\n' +
-      "          id: 'lyrics-mode',\n" +
-      "          label: '歌词高亮方式',\n" +
-      "          state: 'live',\n" +
-      "          def: '逐字',\n" +
-      '        },\n',
+      '        {\r\n' +
+      "          id: 'lyrics-mode',\r\n" +
+      "          label: '歌词高亮方式',\r\n" +
+      "          state: 'live',\r\n" +
+      "          why: '整行一次性点亮，或卡拉 OK 式逐字推进',\r\n" +
+      "          def: '逐字',\r\n" +
+      '        },\r\n',
     replace: '',
     expect: ['ADDED.lyrics-mode', 'COUNT.total'],
   },
@@ -3519,7 +3747,9 @@ const MUTATIONS = [
   {
     name: '删掉「模型与诊断」小节标题（C11 的小节数不再对得上）',
     file: F.secTranslate,
-    find: '        <SubTitle>模型与诊断</SubTitle>\n',
+    // 锚点只取标题字面量、不带缩进与属性：小节标题现在带 head 副标题，
+    // 写死 `<SubTitle>模型与诊断</SubTitle>` 会随卡片副标题的增删静默失配
+    find: '模型与诊断</SubTitle>\n',
     replace: '',
     expect: ['ENGINE.wiring.fourSubTitles'],
   },
@@ -3566,18 +3796,16 @@ const MUTATIONS = [
   {
     name: '把视觉档的空闲卸载也写成即时生效（两档待遇被混同）',
     file: F.secTranslate,
-    find: '必须重启引擎',
-    replace: '保存后即生效',
-    // `all: true` 是必须的：这五个字在源码里出现两次（合卡注解的代码 + 它上面那句注释），
-    // 只改第一处（注释）会留下代码里的那一处 ⇒ 断言照旧绿 ⇒ 假反证。
-    all: true,
-    expect: ['ENGINE.wiring.visionNeedsRestart'],
+    // 锚点 = 那枚 warning chip 的**可见文字**：改成"保存后即生效"就把两档待遇混同了
+    find: '<span className="chip chip-warning">需重启</span>',
+    replace: '<span className="chip chip-warning">保存后即生效</span>',
+    expect: ['ENGINE.wiring.visionNeedsRestart', 'SIMPLIFY.idle.card'],
   },
   {
     name: '删掉卡片级「0 = 从不卸载」的说明（0 会被当成 bug 而不是设计）',
-    file: F.secTranslate,
-    find: '从不卸载',
-    replace: '空闲即释放',
+    file: F.catalog,
+    find: '（0 = 从不）',
+    replace: '（空闲即释放）',
     all: true,
     expect: ['ENGINE.wiring.idleNeverUnload'],
   },
@@ -3805,8 +4033,8 @@ const MUTATIONS = [
   {
     name: '给第 2 段编一个字节进度（未就绪屏此刻读不到任何 HTTP，编出来的数字就是撒谎）',
     file: F.assembly,
-    find: "{ id: 'runtime', text: '运行环境装配' },",
-    replace: "{ id: 'runtime', text: '运行环境装配 · 2.1/4.6 GB' },",
+    find: "{ id: 'runtime', text: '运行环境' },",
+    replace: "{ id: 'runtime', text: '运行环境 · 2.1/4.6 GB' },",
     expect: ['NOTREADY.detail.noFabricatedProgress'],
   },
   {
@@ -3824,28 +4052,6 @@ const MUTATIONS = [
     expect: ['NOTREADY.phase.readyNotEvent'],
   },
   {
-    name: '在线表单退回行内样式（颜色不再跟令牌、同屏同一种控件两种长相）',
-    file: F.onlineApi,
-    find: '        <span className="nr-form-k">App Secret</span>',
-    replace: '        <span className="nr-form-k" style={{ color: "#888" }}>App Secret</span>',
-    expect: ['NOTREADY.onlineForm.noInlineStyle'],
-  },
-  {
-    name: '摘掉 `nr-form-acts` 那层（按钮直接进 column ⇒ 被 stretch 成整行宽）',
-    file: F.onlineApi,
-    find: '      <div className="nr-form-acts">\n        <Btn kind="primary"',
-    replace: '      <div>\n        <Btn kind="primary"',
-    expect: ['NOTREADY.onlineForm.actsNotFullWidth'],
-  },
-  {
-    name: '`.nr-form-acts` 不再 flex（类名还在，但按钮仍会被 stretch 成整行）',
-    file: F.mangaStyle,
-    find: '.nr-form-acts {\n  display: flex;',
-    replace: '.nr-form-acts {\n  display: block;',
-    expect: ['NOTREADY.onlineForm.actsNotFullWidth'],
-  },
-  {
-    name: 'TS 侧把第五态 stopping 删掉（Rust 已是五态；stateView() 会返回 undefined 而崩）',
     file: F.ipc,
     find: "export type ServiceState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';",
     replace: "export type ServiceState = 'stopped' | 'starting' | 'running' | 'error';",
@@ -3853,23 +4059,22 @@ const MUTATIONS = [
   },
   {
     name: '重试不再按失败阶段分派（L2 失败时用户只会把同一件坏掉的事重做一遍）',
-    file: F.notReady,
-    // `all`：主按钮的渲染条件与它的 kind 两处都写了这个判据，只改一处仍是绿的
-    find: "failed && status?.phase === 'L2'",
-    replace: 'false',
-    all: true,
+    file: path.join(F.notReadyDir, 'derive.ts'),
+    // 判定收进具名函数后，破坏它的形态是"恒假"—— 那正是"永远走不到重新下载"。
+    find: "return status?.state === 'error' && status.phase === 'L2';",
+    replace: 'return false;',
     expect: ['NOTREADY.retry.byPhase'],
   },
   {
     name: '不显示 status.mode（"以为在跑真引擎、其实跑的替身"重新变成查不出来的事）',
-    file: F.notReady,
+    file: path.join(F.notReadyDir, 'ServiceForm.tsx'),
     find: "status?.mode ?? '—'",
     replace: "'—'",
     expect: ['NOTREADY.wiring.modeDegraded'],
   },
   {
     name: '让状态屏用一个不存在的样式类（元素照常渲染，只是没有样式）',
-    file: F.notReady,
+    file: path.join(F.notReadyDir, 'ServiceForm.tsx'),
     // `all`：四个 meta chip 共用同一个类名，只改一处仍然命中样式表
     find: '<span className="mchip">',
     replace: '<span className="mchip-v2">',
@@ -3880,16 +4085,16 @@ const MUTATIONS = [
     // 时间线是"一条线"：序号写死就没有"还剩几步"这回事了，且步数可能与数据脱钩
     name: '把时间线节点序号写成死值（序号不再由下标派生）',
     file: F.timeline,
-    find: 'String(i + 1)',
-    replace: 'String(1)',
+    find: 'const step = i + 1;',
+    replace: 'const step = 1;',
     expect: ['NOTREADY.timeline.derivedFromStages'],
   },
   {
     // 组件侧那一半：状态词还在，但不再映射到 loading —— 圈就永远不会转
     name: '「进行中」不再映射到 loading 态（退回一个不动的节点）',
     file: F.timeline,
-    find: "  active: 'is-loading',",
-    replace: "  active: '',",
+    find: 'data-state={note}',
+    replace: "data-state={note === 'active' ? 'waiting' : note}",
     expect: ['NOTREADY.timeline.explicitLoading'],
   },
   {
@@ -3897,7 +4102,7 @@ const MUTATIONS = [
     // 否则这条断言只测了"有没有这个类"，测不到"圈转不转"
     name: '摘掉 loading 外圈的旋转动画（节点在，但圈不转 ⇒ 与"卡住了"看起来一样）',
     file: F.mangaStyle,
-    find: '  animation: tlspin 900ms linear infinite;',
+    find: '  animation: miao-pulse-node 1.8s ease-in-out infinite;',
     replace: '',
     expect: ['NOTREADY.timeline.explicitLoading'],
   },
@@ -3911,30 +4116,30 @@ const MUTATIONS = [
 
   // ——— ② 分组简洁化（2026-10-07）—— 每条新增断言都必须有一条能把它打红的破坏 ———
   {
-    name: '让 ② 的摘要说出 note 里没有的话（摘要成了新的承诺）',
+    name: '把已经删掉的「一行摘要」字段加回来（摘要层回潮：同一件事又有了两份说法）',
     file: F.catalog,
     /*
-     * ⚠️ 锚点带着目标组的**摘要原文** ⇒ 摘要每改一次就要同步一次（本项目已两次踩坑：
-     * D-84 与 D-134）。锚点不同步会退化成「锚点未找到 ⇒ 跳过」—— 跳过 ≠ 通过
-     * （分母写死，跳过会被 `✗ 有 N 条未能反证` 抓住，不会静默变绿，但仍要随手同步）。
+     * 这一条守的是**减法**：组说明改成全文直出后，`noteSummary` 这个字段必须彻底消失。
+     * 只删渲染、把字段留在数据里，下一个人会以为"数据还在，界面漏了"，然后把它接回去。
+     * 锚点取 `note` 字段本身（每组的说明原文），不依赖任何一句文案。
      */
-    find: "'本组 13 项 · 改档位/后端/模型目录要重启引擎才生效",
-    replace: "'本组 13 项 · 改档位/后端/模型目录要重启引擎才生效 · 摘要新增的一条",
-    expect: ['SIMPLIFY.notesummary.verbatim'],
+    find: "  id: 'translate',",
+    replace: "  noteSummary: '回潮的摘要',\n  id: 'translate',",
+    expect: ['SIMPLIFY.note.verbatim'],
   },
   {
-    name: '把「翻译服务」的一行摘要删掉（该组有组说明却没摘要）',
-    file: F.catalog,
-    find: "noteSummary: '本组 13 项 · 改档位/后端/模型目录要重启引擎才生效 · 两个空闲卸载阈值生效时机不同',",
+    name: '去掉组说明盒里的信息图标（设计稿 .s-note 的 13px .ico）',
+    file: F.parts,
+    find: '<Info size={13} />',
     replace: '',
-    expect: ['SIMPLIFY.notesummary.verbatim'],
+    expect: ['SIMPLIFY.note.box'],
   },
   {
-    name: '把「通用」的 <GroupNote> 摘掉 summary（数据有了、界面不折叠）',
-    file: F.secGeneral,
-    find: '<GroupNote summary={GENERAL.noteSummary}>{GENERAL.note as string}</GroupNote>',
-    replace: '<GroupNote>{GENERAL.note as string}</GroupNote>',
-    expect: ['SIMPLIFY.notesummary.wired'],
+    name: '把 GroupNote 的盒子换回旧的折叠结构（设计稿那个 .s-note 盒被换掉）',
+    file: F.parts,
+    find: '<div className="set-note-inline">',
+    replace: '<div className="set-note">',
+    expect: ['SIMPLIFY.note.box'],
   },
   {
     name: '去掉 GroupNote 的"缺组说明就不渲染"自守（缺 note 时又会在 emphasis 处崩）',
@@ -3946,8 +4151,8 @@ const MUTATIONS = [
   {
     name: '把页标题下的 blurb 改回无条件渲染（缺 blurb 时这一行会崩或留空）',
     file: F.settingsScreen,
-    find: 'active.blurb ? <div className="settings-blurb">',
-    replace: 'true ? <div className="settings-blurb">',
+    find: 'active?.blurb ? (',
+    replace: 'true ? (',
     expect: ['SIMPLIFY.optional.selfGuard'],
   },
   {
@@ -4079,7 +4284,11 @@ const MUTATIONS = [
   {
     name: '把应用入口的 aria-label 删掉（纯图标态下再没有任何可读名称）',
     file: F.sidebar,
-    find: '          aria-label={a.label}\n',
+    /*
+     * 锚点随侧栏改用 `Btn` 单元换了写法：`aria-label={a.label}` → `ariaLabel={a.label}`。
+     * 删掉的就是那一行 —— 断言同时接受两种拼写（见 `sidebarBranch` 的注释）。
+     */
+    find: '          ariaLabel={a.label}\n',
     replace: '',
     expect: ['FEATURES.shell.sidebarBranch'],
   },
@@ -4105,17 +4314,28 @@ const MUTATIONS = [
     expect: ['FEATURES.shell.wired'],
   },
   {
-    name: '把「不合计」这条立场从存储占用块里去掉（用户会本能地去做加法）',
+    name: '把译文库那一行从存储占用里摘掉（只剩音乐缓存，占多少看不见了）',
     file: F.storageBlock,
-    find: '        <div className="set-storage-rule">三处分开列 · 不合计</div>',
-    replace: '        <div className="set-storage-rule">三处分开列</div>',
+    /*
+     * 🔴 2026-10-25：卡头那句「不合计」立场已按用户要求移除，原来那条
+     *    "把立场文案去掉"的反证失去锚点。换成验证行数本身 ——
+     *    删掉译文库那一行后 `rows !== 2` 与「缺少译文库」两条同时变红。
+     */
+    find: '<strong>译文库</strong>',
+    replace: '<strong>译纹库</strong>',
     expect: ['FEATURES.storage.rows'],
   },
   {
-    name: '把模型那一行的「未统计」改成 0 B（把"没有接口"谎报成"精确测得是 0"）',
+    name: '把译文库右侧的大小读数摘掉（占多少看不见了）',
     file: F.storageBlock,
-    find: '          <span className="set-storage-v is-unknown">未统计</span>',
-    replace: '          <span className="set-storage-v">0 B</span>',
+    /*
+     * 🔴 2026-10-25：「翻译模型」行已删，原来那条"把「未统计」改成 0 B"的反证失去锚点。
+     *    换成验证本轮新增的"译文库右侧显示大小"。
+     *    破坏**渲染点本身**（`{libText}` → 空），而不是把变量改名 ——
+     *    改名后 JSX 里仍写着 `{libText}`，断言照样绿（本轮回证抓到过这个假阳性）。
+     */
+    find: '<span className="set-storage-size">{libText}</span>',
+    replace: '<span className="set-storage-size" />',
     expect: ['FEATURES.storage.rows'],
   },
   {
@@ -4220,7 +4440,7 @@ const MUTATIONS = [
   {
     name: '注掉 .notice.set-row-note 补偿规则（盒式提示叠附注类时四周留白重回被清零态）',
     file: F.componentsStyle,
-    find: '.notice.set-row-note {\n  padding: 9px 11px;\n}',
+    find: '.notice.set-row-note {\n  padding: 10px 13px;\n}',
     replace: '/* 反证：补偿规则被注掉 */',
     expect: ['ENGINE.css.noticePadding'],
   },
@@ -4242,7 +4462,7 @@ const MUTATIONS = [
   {
     name: '把狮尾 font.css 的 link 从入口 HTML 摘掉（该字体根本不加载，首位静默回落）',
     file: F.entryHtml,
-    find: '    <link rel="stylesheet" href="/assets/fonts/swei-gothic/font.css" />\n',
+    find: '    <link rel="stylesheet" href="/assets/fonts/swei-gothic/font.css" media="print" onload="this.media = \'all\'" />\n',
     replace: '',
     expect: ['FONT.viaJsModule'],
   },

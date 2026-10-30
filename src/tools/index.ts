@@ -5,6 +5,8 @@
  * 纯函数便于在「规格自检」里单独验证。
  */
 
+/** 剪贴板写入的唯一接缝（桌面走宿主插件，浏览器回退 navigator）—— 见 `tools/clipboard.ts` */
+export { copyText } from '@tools/clipboard';
 /** 人类可读容量。X-D1 副标题的「占 X GB」与左栏容量都走这里，保证两处口径一致 */
 export function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '0 B';
@@ -132,6 +134,27 @@ export function pageSlice<T>(items: T[], page: number, size: number): T[] {
 /** 总页数（至少 1，避免出现「第 1 / 0 页」） */
 export function pageCount(total: number, size: number): number {
   return Math.max(1, Math.ceil(total / size));
+}
+
+/**
+ * 页码窗口：当前页居中、首尾恒显，中间溢出用 `'…'` 占位。
+ *
+ * 存在的理由：队列历史记录只增不减，页码全量渲染在 30+ 页时会把翻页器撑成一整行数字，
+ * 反而看不清当前在哪一页。`span` 默认 1（当前页左右各 1 页），返回值里的 `'…'` 不可点，
+ * 调用方直接 map 即可 —— 不在组件里再算一遍边界（算两遍就会有一遍算错）。
+ */
+export function pageWindow(current: number, total: number, span = 1): (number | '…')[] {
+  const cur = Math.min(Math.max(1, current), total);
+  if (total <= 2 * span + 3) return Array.from({ length: total }, (_, i) => i + 1);
+
+  const from = Math.max(2, cur - span);
+  const to = Math.min(total - 1, cur + span);
+  const out: (number | '…')[] = [1];
+  if (from > 2) out.push('…');
+  for (let p = from; p <= to; p++) out.push(p);
+  if (to < total - 1) out.push('…');
+  if (total > 1) out.push(total);
+  return out;
 }
 
 /**

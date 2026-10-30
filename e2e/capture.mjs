@@ -17,7 +17,7 @@
  *
  * 两道闸，都为了同一件事：**别把假图当证据收进仓**。
  *   ① 开跑前问系统是否锁屏 —— 锁屏时截到的是壁纸，尺寸和体积却都「正常」；
- *   ② 各屏先落暂存区，**互不相同**且齐全才整批搬进 `docs/refs/e2e/`。
+ *   ② 各屏先落暂存区，**互不相同**且齐全才整批搬进 `OUT`（`.tmp/capture/`）。
  * 任一不过就整批丢弃，仓里保持上一轮已验证的版本，不会被坏运行覆盖。
  *
  * 用法：node e2e/capture.mjs
@@ -30,11 +30,19 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { ensureDevServer } from './_devserver.mjs';
-import { describeE2eTmp, e2eRoot, e2eState } from './_e2e-paths.mjs';
+import { describeE2eTmp, e2eData, e2eRoot, e2eRuntime, e2eState } from './_e2e-paths.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BIN = path.join(ROOT, 'src-tauri', 'target', 'debug', 'miao-dock');
-const OUT = path.join(ROOT, 'docs', 'refs', 'e2e');
+/*
+ * 取证图输出目录：**仓库外的临时目录**（`.tmp/capture`），不再写进 `docs/refs/e2e/`。
+ *
+ * 为什么不入库：这六张图是 `capture` 的**默认输出**——跑一次就重新生成，放进版本库等于
+ * 把构建产物提交上去（每轮 diff 都是几 MB 二进制）。真正的取证记录在
+ * `docs/internal/engine-e2e-acceptance-report.md` 里以文字与判据形式保留。
+ * 需要看图时跑一次 `node e2e/capture.mjs`，图落在 `.tmp/capture/`。
+ */
+const OUT = path.join(ROOT, '.tmp', 'capture');
 
 /** 取证图的文件名与它们各自该拍到什么（缺失或重复都算这一张没截到） */
 const SHOTS = [
@@ -53,7 +61,7 @@ const SHOTS = [
 ];
 
 /**
- * 截图**先落到暂存区**，SHOTS 全部齐且互不相同，才整批搬进 `docs/refs/e2e/`。
+ * 截图**先落到暂存区**，SHOTS 全部齐且互不相同，才整批搬进 `OUT`。
  *
  * 为什么不是直接截进仓：坏运行会把好证据原地覆盖掉（已经吃过一次 —— 一次锁屏运行，
  * 四张真图被同一张壁纸替换，而壁纸尺寸、体积都「正常」，肉眼和体积校验都拦不住）。
@@ -125,8 +133,10 @@ const child = spawn(BIN, [], {
     // 会去起 Python + 几 GB 权重（分钟级），截图任务会因此超时/失败。
     MIAO_ENGINE_PROTOCOL: 'mock',
     MIAO_CAPTURE_DIR: STAGE,
-    MIAO_ROOT: rootDir,
-    MIAO_STATE_DIR: stateDir,
+    MIAO_ROOT: e2eData(),
+    MIAO_MANGA_ROOT_DIR: rootDir,
+    MIAO_MANGA_STATE_DIR: stateDir,
+    MIAO_MANGA_RUNTIME_ROOT: e2eRuntime(),
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

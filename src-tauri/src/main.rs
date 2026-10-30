@@ -6,6 +6,7 @@
 //   · 托盘常驻；「退出喵坞」需二次确认（确认文案由前端给出，见 §2.1）
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod anime;
 mod commands;
 mod music;
 mod selftest;
@@ -72,9 +73,13 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        // 剪贴板：日志块的「复制全部」走它，而不是 WebView 的 navigator.clipboard
+        // （后者在 Tauri 的 WebView 里需要安全上下文与用户手势，静默失败时没有任何信号）
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(ServiceManager::new())
         .invoke_handler(commands::handler())
         .setup(|app| {
+            eprintln!("[DIAG] 已进入自定义 setup");
             // ---- 托盘：常驻 + 状态点由前端窗口承载（托盘菜单反映服务状态文案） ----
             let show = MenuItem::with_id(app, "show", "显示喵坞", true, None::<&str>)?;
             let restart = MenuItem::with_id(app, "restart", "重启本地服务", true, None::<&str>)?;
@@ -176,6 +181,8 @@ fn main() {
                 // 真正退出（托盘「退出喵坞」确认后 / Cmd+Q）：杀子进程，确保端口释放
                 let mgr = app.state::<ServiceManager>();
                 mgr.stop();
+                // 动漫服务是懒启动的独立进程：拉起过才需要收，没拉起是空操作
+                anime::stop();
             }
         });
 }

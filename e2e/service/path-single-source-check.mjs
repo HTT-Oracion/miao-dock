@@ -68,7 +68,7 @@ function fixtureEnv(base) {
   fs.writeFileSync(path.join(src, 'server', 'main.py'), '# fixture\n');
   fs.writeFileSync(py, process.platform === 'win32' ? 'MZ' : '#!/bin/sh\n');
   return {
-    MIAO_RUNTIME_ROOT: base,
+    MIAO_MANGA_RUNTIME_ROOT: base,
     MIAO_ENGINE_DIR: src,
     MIAO_ENGINE_PYTHON: py,
   };
@@ -104,8 +104,8 @@ function probeInterpreter(env) {
     env: {
       ...process.env,
       MIAO_TOKEN: TOKEN,
-      MIAO_ROOT: path.join(tmp, 'root'),
-      MIAO_STATE_DIR: path.join(tmp, 'state'),
+      MIAO_MANGA_ROOT_DIR: path.join(tmp, 'root'),
+      MIAO_MANGA_STATE_DIR: path.join(tmp, 'state'),
       MIAO_ENGINE_PROTOCOL: 'mock',
       ...env,
     },
@@ -169,7 +169,11 @@ if (!fs.existsSync(RUST_BIN)) {
 //   而任一侧另写一份默认推导就会在这里现形。
 {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-single-b-'));
-  const env = { MIAO_RUNTIME_ROOT: base, MIAO_ROOT: path.join(base, 'root'), MIAO_STATE_DIR: path.join(base, 'state') };
+  const env = {
+    MIAO_MANGA_RUNTIME_ROOT: base,
+    MIAO_MANGA_ROOT_DIR: path.join(base, 'root'),
+    MIAO_MANGA_STATE_DIR: path.join(base, 'state'),
+  };
   const launch = await launchInterpreter(env);
   const probe = await probeInterpreter(env);
   check(
@@ -184,7 +188,7 @@ if (!fs.existsSync(RUST_BIN)) {
 //   检测侧若自己拼一份 `Scripts/python.exe` / `bin/python`，这里就会和启动侧分叉。
 {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-single-c-'));
-  const env = { MIAO_RUNTIME_ROOT: base };
+  const env = { MIAO_MANGA_RUNTIME_ROOT: base };
   const launch = await launchInterpreter(env);
   const seg = process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python');
   check(
@@ -207,9 +211,9 @@ if (!fs.existsSync(RUST_BIN)) {
           ...process.env,
           MIAO_TOKEN: TOKEN,
           MIAO_ENGINE_PROTOCOL: protocol,
-          MIAO_RUNTIME_ROOT: base,
-          MIAO_ROOT: path.join(base, 'root'),
-          MIAO_STATE_DIR: path.join(base, 'state'),
+          MIAO_MANGA_RUNTIME_ROOT: base,
+          MIAO_MANGA_ROOT_DIR: path.join(base, 'root'),
+          MIAO_MANGA_STATE_DIR: path.join(base, 'state'),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });

@@ -314,8 +314,8 @@ async function runAll() {
     MIAO_ENGINE_TIER: 'small', // ← 用户"配置"了 Small
     MIAO_PORT: String(svcPort),
     MIAO_TOKEN: TOKEN,
-    MIAO_STATE_DIR: path.join(TMP, 'state'),
-    MIAO_ROOT: path.join(TMP, 'root'),
+    MIAO_MANGA_STATE_DIR: path.join(TMP, 'state'),
+    MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root'),
     MIAO_NO_LLM_AUTOSTART: '1',
   });
 

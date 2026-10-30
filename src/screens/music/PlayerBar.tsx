@@ -1,4 +1,6 @@
 import {
+  ChevronUp,
+  Heart,
   ListMusic,
   MonitorSpeaker,
   Pause,
@@ -11,11 +13,12 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { providerLabel } from '@music/platform';
 import { QUALITY_OPTIONS, SEEK_COMMIT_DELAY_MS } from '@music/player-options';
 import { useMusicStore } from '@music/store';
 import { canUseHeartbeat } from '@music/actions/playback';
 import { fmtTime, qualityLabel } from '@music/convert';
-import { IconButton, PlayModeButton, Select } from '@components/units';
+import { Btn, IconButton, PlayModeButton, Select } from '@components/units';
 import { DesktopLyricsSettingsModal } from '@screens/music/DesktopLyricsSettingsModal';
 
 /**
@@ -120,6 +123,26 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   /** 音量条填充百分比（0~100），同一套渐变口径。 */
   const volFill = Math.max(0, Math.min(100, volume * 100));
 
+  const likedSongIds = useMusicStore((s) => s.likedSongIds);
+  const toggleLike = useMusicStore((s) => s.toggleLike);
+  const liked = currentSong ? likedSongIds.has(currentSong.id) : false;
+
+  /**
+   * 左侧副行（设计稿 `pb-tx small`）：`歌手 · 平台 · 音质`。
+   *
+   * 三段都取真值：歌手来自曲目、平台来自曲目所属 provider（跨平台搜索时会与播放源不同，
+   * 所以不能直接用播放源）、音质取**实际拿到**的那一档。未在播放时给一句引导语。
+   */
+  const pbSubtitle = currentSong
+    ? [
+        currentSong.artist || '未知歌手',
+        providerLabel(currentSong.provider),
+        currentQuality ? qualityLabel(currentQuality) : qualityLabel(playbackQuality),
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : '从左侧歌单或搜索结果里选一首';
+
   /** 允许在 style 里写 CSS 自定义属性（--fill）的类型（React.CSSProperties 不含 `--*` 键） */
   type FillStyle = React.CSSProperties & Record<'--fill', string>;
 
@@ -149,125 +172,157 @@ export function PlayerBar({ onSeek, hidden }: { onSeek: (ms: number) => void; hi
   if (hidden) return null;
 
   return (
-    <div className="music-player">
-      <div className="music-player-row">
-        {/* 左侧：封面 + 歌名/歌手（固定不收缩，标题内部再截断） */}
-        <div className="music-pb-l">
-          <div className="music-pb-cover" onClick={() => setExpanded(true)} title="展开播放器">
-            {currentSong?.cover ? <img src={currentSong.cover} alt="" /> : null}
+    <>
+      <div className="music-player">
+        <div className="music-player-row">
+          {/* 左侧（设计稿 `.pb-left`）：封面 + 歌名 /「歌手 · 平台 · 音质」+ 收藏 */}
+          <div className="music-pb-l">
+            {/* 封面是**真按钮**（设计稿 `.pb-cover` 就是 `<button aria-label="展开播放器">`）：
+              原来是个带 onClick 的 div —— 键盘用户按 Tab 到不了它，也按不出 Enter/Space。
+              展开播放器是这一条上最高频的动作之一，不能只有鼠标能用。 */}
+            <Btn
+              kind="bare"
+              className="music-pb-cover"
+              ariaLabel="展开播放器"
+              title="展开播放器"
+              onClick={() => setExpanded(true)}
+            >
+              {currentSong?.cover ? <img src={currentSong.cover} alt="" /> : null}
+            </Btn>
+            {/* 标题区也点得动（比设计稿多一个指针目标）：它是**冗余**入口，不承载键盘语义 */}
+            <div className="music-pb-tx" onClick={() => setExpanded(true)} title="展开播放器">
+              <b>{currentSong?.name ?? '未在播放'}</b>
+              {/* 副行按设计稿三段：歌手 · 平台 · 音质。音质优先显示**实际拿到**的那一档
+                （平台降级时与下拉里"想要的档位"不一致，显示想要的等于把降级藏了） */}
+              <span>{pbSubtitle}</span>
+            </div>
+            {currentSong ? (
+              <IconButton title="收藏" active={liked} onClick={() => void toggleLike(currentSong)}>
+                <Heart size={14} fill={liked ? 'currentColor' : 'none'} />
+              </IconButton>
+            ) : null}
           </div>
-          <div className="music-pb-tx" onClick={() => setExpanded(true)} title="展开播放器">
-            <b>{currentSong?.name ?? '未在播放'}</b>
-            <span>{currentSong?.artist ?? '从左侧歌单或搜索结果里选一首'}</span>
-          </div>
-        </div>
 
-        {/* 中间：绝对居中的传输控制组（上一首 / 播放暂停 / 下一首 / 播放模式） */}
-        <div className="music-ctrl">
-          <IconButton title="上一首" onClick={() => prev()}>
-            <SkipBack size={17} />
-          </IconButton>
-          <IconButton title={isPlaying ? '暂停' : '播放'} primary onClick={() => togglePlay()}>
-            {isPlaying ? <Pause size={15} /> : <Play size={15} />}
-          </IconButton>
-          <IconButton title="下一首" onClick={() => next()}>
-            <SkipForward size={17} />
-          </IconButton>
-          <PlayModeButton mode={playMode} onCycle={() => cycleMode()} heartbeatAvailable={heartbeatAvailable} />
-        </div>
-
-        {/* 右侧：音质（档位文字）+ 音量 + 桌面歌词 + 桌面歌词设置 + 播放队列 + 关闭播放 */}
-        <div className="music-pb-r">
-          {/* 音质档位下拉（要的档位）：触发器显示档位名（如「无损」），不是图标。setPlaybackQuality 是 async，用 void 显式忽略 Promise */}
-          <Select
-            className="music-q-sel"
-            label="音质档位"
-            value={playbackQuality}
-            options={QUALITY_OPTIONS}
-            onChange={(v) => void setPlaybackQuality(v)}
-          />
-          <div
-            className="music-vol"
-            /*
-             * 滚轮调音量：仅改数值，不拦默认事件。
-             * 不调 e.preventDefault()：React 的 wheel 监听是被动（passive）的，调用无效且会在控制台刷警告；
-             * 本容器位于播放条内、外层并不滚动，也就没有需要拦截的默认滚动行为。
-             */
-            onWheel={(e) => stepVolume(e.deltaY < 0 ? 0.05 : -0.05)}
-          >
-            {/* 静音是「不改音量值」的正交状态，图标随 muted 切换，文案也一并切换 */}
-            <IconButton title={muted ? '取消静音' : '静音'} onClick={() => toggleMute()}>
-              {muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+          {/* 中间（设计稿 `.pb-center`）：播放模式 / 上一首 / 播放暂停 / 下一首 */}
+          <div className="music-ctrl">
+            <PlayModeButton mode={playMode} onCycle={() => cycleMode()} heartbeatAvailable={heartbeatAvailable} />
+            <IconButton title="上一首" onClick={() => prev()}>
+              <SkipBack size={17} />
             </IconButton>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={volume}
-              style={{ '--fill': `${volFill.toFixed(2)}%` } as FillStyle}
-              onChange={(e) => setVolume(Number(e.target.value))}
-            />
+            <IconButton title="播放/暂停" primary onClick={() => togglePlay()}>
+              {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+            </IconButton>
+            <IconButton title="下一首" onClick={() => next()}>
+              <SkipForward size={17} />
+            </IconButton>
           </div>
-          {/* 桌面歌词：独立置顶小窗。title 随状态切换，让同一个按钮的「下一步」始终明确 ——
+
+          {/* 右侧（设计稿 `.pb-right`）：音质 + 音量 + 桌面歌词 + 设置 + 队列 + 展开 + 关闭 */}
+          <div className="music-pb-r">
+            {/* 音质档位下拉（要的档位）：触发器显示档位名（如「无损」），不是图标。setPlaybackQuality 是 async，用 void 显式忽略 Promise */}
+            <Select
+              className="music-q-sel"
+              label="音质档位"
+              value={playbackQuality}
+              options={QUALITY_OPTIONS}
+              onChange={(v) => void setPlaybackQuality(v)}
+            />
+            <div
+              className="music-vol"
+              /*
+               * 滚轮调音量：仅改数值，不拦默认事件。
+               * 不调 e.preventDefault()：React 的 wheel 监听是被动（passive）的，调用无效且会在控制台刷警告；
+               * 本容器位于播放条内、外层并不滚动，也就没有需要拦截的默认滚动行为。
+               */
+              onWheel={(e) => stepVolume(e.deltaY < 0 ? 0.05 : -0.05)}
+            >
+              {/* 静音是「不改音量值」的正交状态，图标随 muted 切换，文案也一并切换 */}
+              <IconButton title={muted ? '取消静音' : '静音'} onClick={() => toggleMute()}>
+                {muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+              </IconButton>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                style={{ '--fill': `${volFill.toFixed(2)}%` } as FillStyle}
+                onChange={(e) => setVolume(Number(e.target.value))}
+              />
+            </div>
+            {/* 桌面歌词：独立置顶小窗。title 随状态切换，让同一个按钮的「下一步」始终明确 ——
               开着时看到「关闭桌面歌词」比看到「桌面歌词」更能说明再点一下会发生什么。
               active 走 IconButton 自带的 is-on，与旁边按钮的激活态同一套视觉。
               本平台不提供该窗口时整块不渲染（mac：见 store 的 desktopLyricsSupported）。 */}
-          {desktopLyricsSupported && (
-            <IconButton
-              title={lyricsWindowOpen ? '关闭桌面歌词' : '桌面歌词'}
-              active={lyricsWindowOpen}
-              onClick={() => void setLyricsWindowOpen(!lyricsWindowOpen)}
-            >
-              <MonitorSpeaker size={16} />
+            {desktopLyricsSupported && (
+              <IconButton
+                title="桌面歌词窗口"
+                active={lyricsWindowOpen}
+                onClick={() => void setLyricsWindowOpen(!lyricsWindowOpen)}
+              >
+                <MonitorSpeaker size={16} />
+              </IconButton>
+            )}
+            {/* 桌面歌词设置：打开独立弹窗（内容项后续任务补，这里只给入口） */}
+            <IconButton title="桌面歌词设置" onClick={() => setDlSettingsOpen(true)}>
+              <Settings size={16} />
             </IconButton>
-          )}
-          {/* 桌面歌词设置：打开独立弹窗（内容项后续任务补，这里只给入口） */}
-          <IconButton title="桌面歌词设置" onClick={() => setDlSettingsOpen(true)}>
-            <Settings size={16} />
-          </IconButton>
-          <IconButton title="播放队列" onClick={() => setQueueOpen(true)}>
-            <ListMusic size={16} />
-          </IconButton>
-          {/* 「关闭播放」= 停下当前这首（保留队列），与上面的「播放队列」（清空列表）是两件事 */}
-          <IconButton title="关闭播放" onClick={() => closePlayback()}>
-            <X size={15} />
-          </IconButton>
+            <IconButton title="播放队列" onClick={() => setQueueOpen(true)}>
+              <ListMusic size={16} />
+            </IconButton>
+            {/* 展开播放器（设计稿 `.pb-right` 倒数第二格）：与点封面同一个动作，
+              但图标入口是"我知道这里能展开"的那条路 —— 只有封面可点时，用户要靠猜 */}
+            <IconButton title="展开播放器" onClick={() => setExpanded(true)}>
+              <ChevronUp size={16} />
+            </IconButton>
+            {/* 「关闭播放」= 停下当前这首（保留队列），与上面的「播放队列」（清空列表）是两件事 */}
+            <IconButton title="关闭播放" onClick={() => closePlayback()}>
+              <X size={15} />
+            </IconButton>
+          </div>
         </div>
-      </div>
 
-      <div className="music-prog">
-        {/* 左侧当前时间：拖拽中显示本地值，松手前不跟 store 跳动；第二个参数仍是总时长 */}
-        <span className="music-prog-t">{fmtTime(shownMs)}</span>
-        {/* 拖动只改本地 dragMs；指针抬起（pointerup）提交。
+        <div className="music-prog">
+          {/* 左侧当前时间：拖拽中显示本地值，松手前不跟 store 跳动；第二个参数仍是总时长 */}
+          <span className="music-prog-t">{fmtTime(shownMs)}</span>
+          {/* 拖动只改本地 dragMs；指针抬起（pointerup）提交。
             键盘方向键不产生 pointerup，必须再挂 keyup 兜底，否则键盘调进度永远提交不了。
             blur 是第三种收尾：拖到滑块外松手时 pointerup 不一定落在 input 上，失焦就成了最后一道保险
             （dragMs 已为 null 时 commit 会早退，所以重复触发无副作用）。 */}
-        <input
-          type="range"
-          className="music-prog-bar"
-          min={0}
-          max={Math.max(durationMs, 1)}
-          step={1000}
-          value={shownMs}
-          style={{ '--fill': `${progFill.toFixed(2)}%` } as FillStyle}
-          onChange={(e) => setDragMs(Number(e.target.value))}
-          onPointerUp={commit}
-          onKeyUp={commit}
-          onBlur={commit}
-        />
-        <span className="music-prog-t">{fmtTime(durationMs)}</span>
-        {/* 实际拿到的音质/码率：与下拉的「想要的档位」分开显示 —— 平台降级时两者不一致，只显示档位等于把降级藏了。
+          <input
+            type="range"
+            className="music-prog-bar"
+            min={0}
+            max={Math.max(durationMs, 1)}
+            step={1000}
+            value={shownMs}
+            style={{ '--fill': `${progFill.toFixed(2)}%` } as FillStyle}
+            onChange={(e) => setDragMs(Number(e.target.value))}
+            onPointerUp={commit}
+            onKeyUp={commit}
+            onBlur={commit}
+          />
+          <span className="music-prog-t">{fmtTime(durationMs)}</span>
+          {/* 实际拿到的音质/码率：与下拉的「想要的档位」分开显示 —— 平台降级时两者不一致，只显示档位等于把降级藏了。
             currentQuality 为空（未在播放）时整块不渲染；码率仅在拿到（>0）时追加。 */}
-        {currentQuality ? (
-          <span className="music-br">
-            {qualityLabel(currentQuality)}
-            {currentBitrate > 0 ? ` ${Math.round(currentBitrate / 1000)}kbps` : ''}
-          </span>
-        ) : null}
+          {currentQuality ? (
+            <span className="music-br">
+              {qualityLabel(currentQuality)}
+              {currentBitrate > 0 ? ` ${Math.round(currentBitrate / 1000)}kbps` : ''}
+            </span>
+          ) : null}
+        </div>
       </div>
-
+      {/*
+       * 🔴 弹窗必须挂在 `.music-player` **外面**。
+       *
+       * `.music-player` 带 `backdrop-filter: blur(20px)`，而 `backdrop-filter` 会让该元素
+       * 成为 `position: fixed` 的**包含块** —— 弹窗放里面时，蒙层只盖住播放条那一小条、
+       * 卡片被挤到播放条的位置上（用户报的"弹窗位置混乱"）。
+       * 挪到外面就回到视口坐标，且不必给 `Modal` 加 Portal
+       *（Portal 到 React 根之外会让事件委托失效，按钮全点不动 —— 实测踩过）。
+       */}
       <DesktopLyricsSettingsModal open={dlSettingsOpen} onClose={() => setDlSettingsOpen(false)} />
-    </div>
+    </>
   );
 }

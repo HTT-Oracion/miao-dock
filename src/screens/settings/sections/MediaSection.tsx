@@ -2,12 +2,18 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMusicStore } from '@music/store';
-import { Btn, ColorPicker, Range, Select, Swatches, Switch } from '@components/units';
+import { Btn, ColorPicker, Range, Segmented, Select, Swatches, Switch } from '@components/units';
 import { CtlNote, GroupNote, ReadOnly } from '@screens/settings/parts';
-import { SKINS, QUALITY_OPTIONS, LYRICS_SIZE, LYRICS_COLORS, LYRICS_MODE_OPTIONS } from '@music/player-options';
+import {
+  SKINS,
+  QUALITY_OPTIONS,
+  LYRICS_SIZE,
+  LYRICS_COLORS,
+  LYRICS_COLOR_NAMES,
+  LYRICS_MODE_OPTIONS,
+} from '@music/player-options';
 import { MEDIA } from '@screens/settings/catalog';
 import type { SettingItem } from '@screens/settings/catalog';
-import { CacheBlock } from '@screens/settings/CacheBlock';
 import { Group } from './shared';
 
 /**
@@ -111,12 +117,11 @@ export function MediaSection() {
         return <Switch on={dynamicEnabled} onToggle={() => setDynamicEnabled(!dynamicEnabled)} label={item.label} />;
       case 'disc-mode':
         return <Switch on={discMode} onToggle={() => setDiscMode(!discMode)} label={item.label} />;
-      case 'music-cache':
-        // 四格块，自身带标题/说明/统计/按钮，所以不需要 Row 的标题列
-        // （`Group` 见到 layout:'block' 也不会包 Row，见 Group 里的注释）
-        return <CacheBlock />;
       case 'lyrics-mode':
-        return <Select label={item.label} value={lyricsMode} options={LYRICS_MODE_OPTIONS} onChange={setLyricsMode} />;
+        // 设计稿这里是 `.seg` 分段控件而不是下拉：两档要一眼看全、点一下就换
+        return (
+          <Segmented label={item.label} value={lyricsMode} options={LYRICS_MODE_OPTIONS} onChange={setLyricsMode} />
+        );
       case 'lyrics-size':
         return (
           <Range
@@ -136,6 +141,7 @@ export function MediaSection() {
             <Swatches
               label={item.label}
               colors={LYRICS_COLORS}
+              names={LYRICS_COLOR_NAMES}
               value={lyricsHighlightColor}
               onPick={setLyricsHighlightColor}
             />
@@ -193,8 +199,9 @@ export function MediaSection() {
           </>
         );
       case 'vinyl-color-mode':
+        // 同 `lyrics-mode`：设计稿用分段控件（两档），不是下拉
         return (
-          <Select
+          <Segmented
             label={item.label}
             value={vinylColorMode}
             options={[
@@ -224,12 +231,18 @@ export function MediaSection() {
 
   return (
     <>
-      {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 MEDIA.note 时这一行自动消失 */}
-      <GroupNote summary={MEDIA.noteSummary}>{MEDIA.note as string}</GroupNote>
+      {/*
+       * 「音乐账号」卡**已移除**（本轮需求）：账号是音乐屏自己的事 ——
+       * 工具条右侧那枚按钮就是登录入口，点开还会弹登录框。
+       * 设置页再摆一张四格卡，等于把同一个身份状态做了两套界面，
+       * 而且这一页的主语是"播放与媒体"，不是"账号"。
+       */}
       {/* 按 catalog 的 groups 顺序渲染三小节：写死第一组会静默漏掉「歌词 / 透明彩胶」 */}
       {MEDIA.groups.map((g) => (
         <Group key={g.id} group={g} render={render} />
       ))}
+      {/* 组说明缺省即不渲染（GroupNote 自守）：catalog 未给 MEDIA.note 时这一行自动消失 */}
+      <GroupNote>{MEDIA.note as string}</GroupNote>
     </>
   );
 }

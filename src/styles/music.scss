@@ -19,50 +19,75 @@
  * 高于页面内容与 `.music-toast`(50)，低于 Radix 弹层(60)与模态(80+) ——
  * 提示不该盖住确认框，但也不该被下拉菜单压住。
  */
+/*
+ * 灵动岛的定位容器：**在侧栏右侧的内容区里居中**，不是整个窗口居中
+ * （设计稿 `.island` 的 `left: calc(sidebar-w + (100vw - sidebar-w)/2)`）。
+ * 整窗居中的话，岛会偏左约半个侧栏宽（78/2 ≈ 39px）—— 与工具条标题、
+ * 内容区的中线都对不上，看起来像"没摆正"。
+ */
 .di-wrap {
   position: fixed;
-  top: 0;
-  left: 0;
+  top: 12px;
+  left: var(--di-left, 78px);
   right: 0;
   display: flex;
   justify-content: center;
   z-index: 55;
   pointer-events: none; /* 容器不拦点击，只有胶囊自己能点 */
 }
+/* 侧栏在窄窗会收窄（app.scss 的 1040 / 760 两档），岛的中线要跟着走 */
+@media (max-width: 1040px) {
+  .di-wrap {
+    --di-left: 66px;
+  }
+}
+@media (max-width: 760px) {
+  .di-wrap {
+    --di-left: 60px;
+  }
+}
 
 /* 胶囊本体：三态共用同一个元素，形变全靠内联 width/height 补间。
-   ⚠️ transition 里的 width 0.32s 与 DynamicIsland.tsx 的 MORPH_MS(320) 必须一致
+   ⚠️ transition 里的 width 0.38s 与 DynamicIsland.tsx 的 MORPH_MS(380) 必须一致
    （check:units 的 ISLAND.morphDurationSync 会双向比对这两个数，改一处必须改另一处）；
-   transform/opacity 0.26s 与 TS 侧 FADE_MS(260) 同源。 */
+   transform/opacity 0.24s 与 TS 侧 FADE_MS(240) 同源。
+   时长与曲线取设计稿 `.island`：形变 380ms + 弹簧（`--ease-spring`，会轻微过冲，
+   读起来是"弹了一下"而不是"挪了一下"）；padding / background 240ms。 */
 .di-capsule {
   pointer-events: auto;
   position: relative;
   display: flex;
   align-items: center;
   overflow: hidden;
-  margin-top: 10px;
-  /* 底色比 --md-surface 更"浮"一点，读成"悬在上层"而不是"贴在页面上的一块 UI" */
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: 999px; /* 胶囊 = 全圆角，与项目既有 .pill / .magic 同一套语汇 */
-  box-shadow: 0 10px 28px rgba(20, 15, 41, 0.2);
+  /* 底色比页面底更"浮"一点，读成"悬在上层"而不是"贴在页面上的一块 UI" */
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  /* 圆角随状态走（设计稿：idle 999 / pill 16 / card 20）—— 三态都是同一个元素，
+     border-radius 已在 transition 里，形变时会一起补间 */
+  border-radius: 999px;
+  box-shadow: var(--miao-shadow-2);
   font-size: 12px;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   cursor: pointer;
   transition:
-    transform 0.26s cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 0.26s cubic-bezier(0.4, 0, 0.2, 1),
-    width 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),
-    height 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),
-    border-radius 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
+    transform 0.24s var(--miao-ease-out),
+    opacity 0.24s var(--miao-ease-out),
+    width 0.38s var(--miao-ease-spring),
+    height 0.38s var(--miao-ease-spring),
+    border-radius 0.38s var(--miao-ease-spring),
+    padding var(--miao-dur-base),
+    background var(--miao-dur-base);
 }
-/* 大卡不再用全圆角：320×150 若还是 999 半径会变成"跑道形"，读不出卡片感。
-   展开态收成 20（大卡）/18（单行长条）。 */
+/* 大卡不再用全圆角：350×160 若还是 999 半径会变成"跑道形"，读不出卡片感。
+   展开态收成 20（设计稿 `.island[data-state="card"]`）；折叠胶囊 16（设计稿 pill 态）。 */
 .di-capsule.is-expanded.is-music {
   border-radius: 20px;
 }
+.di-capsule.is-music:not(.is-expanded) {
+  border-radius: 16px;
+}
 
-/* 音乐卡容器：铺满胶囊（折叠 200×30 / 展开 320×150），内部元素全部绝对定位，
+/* 音乐卡容器：铺满胶囊（折叠 306×46 / 展开 350×160），内部元素全部绝对定位，
    于是它们不参与"胶囊宽高变了就重排"——折叠↔展开只是各自 transform 的补间。 */
 .di-music {
   position: relative;
@@ -87,15 +112,38 @@
   justify-content: center;
   border-radius: 9px;
   overflow: hidden;
-  background: var(--md-pink); /* 无封面 / 加载失败时的占位底 */
+  background: var(--miao-accent); /* 无封面 / 加载失败时的占位底 */
   color: #fff;
   transform-origin: left top;
   pointer-events: none;
-  transform: translate(10px, 3px) scale(0.5);
-  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transform: translate(9px, 7px) scale(0.667);
+  transition: transform var(--miao-dur-base) var(--miao-ease-spring);
 }
 .di-capsule.is-expanded .di-cover {
   transform: translate(16px, 12px) scale(1);
+}
+/*
+ * 眉标「NOW PLAYING」（设计稿 `.island-eyebrow`）：折叠 (49,7) / 展开 (74,12)，7px / .14em / faint。
+ * 与歌名、歌手同属"共享元素"（绝对定位 + transform 补间），三行文字在两态间一起走。
+ */
+.di-eyebrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  color: var(--miao-faint);
+  white-space: nowrap;
+  transform-origin: left top;
+  pointer-events: none;
+  transform: translate(49px, 7px);
+  transition: transform var(--miao-dur-base) var(--miao-ease-spring);
+}
+.di-capsule.is-expanded .di-eyebrow {
+  transform: translate(74px, 12px);
 }
 .di-cover img {
   width: 100%;
@@ -116,18 +164,18 @@
   font-size: 15px;
   line-height: 1.2;
   font-weight: 700;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   transform-origin: left top;
   pointer-events: none;
-  transform: translate(44px, 8px) scale(0.73);
-  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+  transform: translate(49px, 17px) scale(0.733);
+  transition: transform var(--miao-dur-base) var(--miao-ease-spring);
 }
 .di-capsule.is-expanded .di-name {
   max-width: 224px;
-  transform: translate(74px, 12px) scale(1);
+  transform: translate(74px, 24px) scale(1);
 }
 
 /* 单一共享歌手行：歌名正下方，展开 = 12px 在 (74,32)。
@@ -150,46 +198,76 @@
   max-width: 224px;
   font-size: 12px;
   line-height: 1;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   transform-origin: left top;
   pointer-events: none;
-  transform: translate(44px, 21.6px) scale(0.6);
-  opacity: 0;
+  transform: translate(49px, 31px) scale(0.79);
+  opacity: 1;
   transition:
-    transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1),
-    opacity 0.18s ease-out;
+    transform var(--miao-dur-base) var(--miao-ease-spring),
+    opacity var(--miao-dur-fast) var(--miao-ease-out);
 }
 .di-capsule.is-expanded .di-subname {
-  /* top 32 与展开卡片的 padding-top 对齐，歌手行正好落在"歌名下方、进度条上方"的空档里
+  /* top 42 与展开卡片的 padding-top 对齐，歌手行正好落在"眉标 + 歌名"下方的空档里
      （进度行是绝对定位 bottom:50 ⇒ y∈[88,100]，与此不冲突） */
-  transform: translate(74px, 32px) scale(1);
+  transform: translate(74px, 42px) scale(1);
   opacity: 1;
 }
 
 /* 波形：只在折叠态出现（展开态由大卡里的进度条取代）。
    柱高由 TS 侧真实频谱写内联高度；`is-css` 是**降级档**——
    拿不到音频上下文时用 CSS 动画画"正在出声"，暂停（data-on=0）时完全静止。 */
-.di-wave {
+/*
+ * 折叠态控制组（设计稿 `.island-controls` 的 pill 态：只留播放 + 下一首，首尾两枚隐藏）。
+ * 右内边距 9 与胶囊的 padding 对齐；展开态整组淡出 —— 那时控制权交给卡片里的完整控件组，
+ * 两组同时可点会出现"同一个播放键在两个位置"。
+ */
+.di-pill-ctl {
   position: absolute;
-  right: 10px;
-  top: 7px;
-  z-index: 1;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  transition: opacity var(--miao-dur-fast) ease;
+}
+.di-capsule.is-expanded .di-pill-ctl {
+  opacity: 0;
+  pointer-events: none;
+}
+/* 胶囊里的按钮取设计稿 `.island-btn` 的 24×24 / r7（比通用 .ui-cbtn 小一号） */
+.di-pill-ctl .ui-cbtn {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+/*
+ * 音波（5 根柱子高低错峰）—— **波形本身与定位分离**。
+ *
+ * 灵动岛用它表示"正在播"，曲目表的"加载中"也用它（同一个动画，见 `.song-table-more`）。
+ * 所以柱子与 keyframes 放在 `.di-wave`（不定位、可复用），
+ * 灵动岛那份定位（`right: 66px / top: 15px`）单独写在 `.di-wave.is-css` 上 ——
+ * 否则复用到别处时会连带把元素摆到灵动岛的位置去。
+ */
+.di-wave {
   display: flex;
   align-items: center;
   gap: 2.5px;
   height: 16px;
   pointer-events: none;
-  transition: opacity 0.18s;
 }
 .di-wave i {
   display: block;
   width: 2.5px;
   height: 3px;
   border-radius: 999px;
-  background: var(--md-ink);
+  background: var(--miao-ink);
   opacity: 0.85;
   transition: height 90ms linear;
 }
@@ -218,6 +296,15 @@
   }
 }
 
+/* 灵动岛内那一枚的定位（只有岛里需要；复用波形到别处时不带这段） */
+.di-music > .di-wave.is-css {
+  position: absolute;
+  right: 66px;
+  top: 15px;
+  z-index: 1;
+  transition: opacity var(--miao-dur-fast) ease;
+}
+
 /* 展开大卡：绝对铺满，与折叠内容重叠，靠透明度交叉切换（无位移）。
    32px 上内边距是给"共享封面/歌名"让位 —— 它们在展开态也占着上半部分。
    ⚠️ 下内边距 42px 不是"留白"，而是**给绝对定位的按钮栏预留它的地盘**：
@@ -234,16 +321,7 @@
   gap: 10px;
   padding: 32px 16px 42px;
   opacity: 0;
-  transition: opacity 0.18s;
-}
-.di-artist {
-  margin-left: 60px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--md-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  transition: opacity var(--miao-dur-fast) ease;
 }
 /* 进度行：与按钮栏一样**绝对定位**（见下方 .di-ctl 的固定几何说明）。
    位置/宽度只由卡片尺寸决定，与当前是播放卡还是歌词卡无关 ⇒ 切 di-toggle 时不需重算、不偏移。 */
@@ -261,7 +339,7 @@
   min-width: 26px;
   font-size: 10px;
   font-weight: 600;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   font-variant-numeric: tabular-nums;
 }
 .di-prog .di-time:last-child {
@@ -271,15 +349,17 @@
   flex: 1;
   height: 4px;
   border-radius: 999px;
-  background: var(--md-line);
+  background: var(--miao-line);
   overflow: hidden;
 }
 .di-bar i {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: var(--md-pink);
-  transition: width 0.2s;
+  background: var(--miao-accent);
+  /* 进度填充：设计稿 `.rail-fill` 是 `width .16s linear` —— 填充是跟随播放头的读数，
+     用缓动会读成进度自己在加速，故线性。 */
+  transition: width 160ms linear;
 }
 /* 传输控件整宽居中；「打开播放器」钉在右下角（对齐参考实现的排版）。
    ⚠️ 固定几何（切 di-toggle 不许跳动）：整行**绝对定位**在卡片底部，
@@ -346,8 +426,8 @@
 .di-toggle .ui-cbtn {
   width: 26px;
   height: 26px;
-  color: var(--md-pink);
-  background: var(--md-pink-soft);
+  color: var(--miao-accent);
+  background: var(--miao-accent-soft);
   border-radius: 9px;
 }
 
@@ -394,55 +474,7 @@
   text-align: center;
   font-size: 12px;
   font-weight: 600;
-  color: var(--md-muted);
-}
-
-/* ================================================================ ver2.0 · 视图 Tab 行 */
-
-/* 翻译应用内的二级导航（44px，《09》§3.2）。
-   与工具条之间**不另加边框** —— 二者同属「顶部导航带」，再加一条线会把 62+44
-   切成两个不相干的区域，层级反而更乱。 */
-.viewtabs {
-  flex: 0 0 44px;
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  padding: 0 26px;
-  background: var(--md-surface);
-  border-bottom: 1px solid var(--md-line);
-}
-
-.viewtab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--md-muted);
-  position: relative;
-  transition: color 0.15s;
-}
-.viewtab:hover {
-  color: var(--md-ink-2);
-}
-.viewtab.is-active {
-  color: var(--md-ink);
-  font-weight: 500;
-}
-/* active 用下划线而非底色块：侧栏应用层已经用了 pink-soft 底色，
-   Tab 再用同一套底色会把两级导航压平成一级。下划线是更轻的二级信号。 */
-.viewtab.is-active::after {
-  content: '';
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 0;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--md-pink);
-}
-.viewtab svg {
-  display: block;
+  color: var(--miao-muted);
 }
 
 /* ================================================================ ver2.0 · 音乐占位屏 */
@@ -472,7 +504,7 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  gap: 12px;
+  gap: 14px;
 }
 .music .grow {
   flex: 1;
@@ -489,6 +521,59 @@
   align-items: center;
   justify-content: space-between;
   flex: 0 0 auto;
+  padding: 2px 2px 0;
+}
+/* 顶行 + 平台胶囊行合成一列：胶囊另起一行，234px 的左栏才排得下四个 */
+.music-top-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding-bottom: 2px;
+}
+/* 平台胶囊（设计稿 `.platform-bar` / `.platform-pill`）：短名 + 登录态色点 */
+.platform-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  min-width: 0;
+  padding: 0 2px;
+}
+.platform-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 27px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10px;
+  /* 与 `.btn` / `.text-btn` 同一条纪律：按钮文字不加粗，可点性由底色与描边表达 */
+  font-weight: 400;
+  color: var(--miao-muted);
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease;
+}
+.platform-pill:hover {
+  color: var(--miao-ink);
+  background: var(--miao-surface-2);
+}
+.platform-pill.is-active {
+  color: var(--miao-ink);
+  background: var(--miao-surface);
+  border-color: var(--miao-line);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--miao-ink) 6%, transparent);
+}
+.prov-dot {
+  display: inline-block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--miao-primary);
 }
 .music-top-l {
   display: flex;
@@ -497,24 +582,32 @@
 }
 .music-title {
   font-family: var(--md-font-display);
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
-  color: var(--md-ink);
+  letter-spacing: 0.005em;
+  color: var(--miao-ink);
 }
 /* 「当前平台：xx」Badge —— 可点，点开平台切换弹窗 */
 .music-plat {
-  border: 1px solid var(--md-line);
-  background: var(--md-surface-2);
+  border: 1px solid var(--miao-line);
+  background: var(--miao-surface);
   border-radius: 999px;
-  padding: 3px 10px;
+  padding: 4px 11px;
   font-size: 11px;
-  font-family: var(--md-font-body);
-  color: var(--md-ink-2);
+  font-family: var(--md-font-display);
+  font-weight: 700;
+  color: var(--miao-text);
   cursor: pointer;
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
 }
 .music-plat:hover {
-  border-color: var(--md-pink);
-  color: var(--md-ink);
+  border-color: var(--miao-accent-line);
+  background: var(--miao-accent-soft);
+  color: color-mix(in srgb, var(--miao-accent) 82%, #000);
+  transform: translateY(-1px);
 }
 
 .music-top-r {
@@ -527,25 +620,29 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 2px 8px 2px 2px;
+  padding: 2px 10px 2px 2px;
   border-radius: 999px;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
+  transition:
+    background var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease;
 }
 .music-user:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface);
+  border-color: var(--miao-line);
 }
 .music-ava {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--md-lavender), var(--md-blue));
+  background: linear-gradient(135deg, var(--miao-accent), var(--miao-primary));
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -557,54 +654,499 @@
 }
 .music-nick {
   font-size: 12px;
-  font-weight: 500;
-  color: var(--md-ink);
+  font-weight: 600;
+  color: var(--miao-ink);
   max-width: 120px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ---------------------------------------------------------------- 左右 50/50 */
-/* 左右双卡：两个关键约束保证「卡片高度固定、内部滚动」——
-   `grid-template-rows: minmax(0, 1fr)` 让这一行撑满剩余高度（而不是被内容撑开），
-   `minmax(0, …)` 的 0 是关键：默认 min-content 会让卡片拒绝收缩、把列表顶出去。
-   `.music-cols` 本身不再产生滚动，滚动都发生在卡片内部的列表里。 */
-.music-cols {
+/* ---------------------------------------------------------------- 三栏布局 */
+/*
+ * 设计稿 `music-layout`：`grid 234px | minmax(0,1fr) | 252px`，整屏定高、各栏自己滚动。
+ *
+ * 为什么是 grid 定列而不是 flex：三栏里左资料库与右"正在播放"都是**固定宽度**的
+ * 功能栏（不是内容驱动的卡片），只有中间随窗口伸缩。grid 的定列直接表达这件事，
+ * flex 得靠 `flex: 0 0 234px` 三处 + `min-width:0` 才能达到同样效果。
+ *
+ * `overflow: hidden` 放在容器上：三栏各自 `overflow-y:auto`，容器再滚就会出双滚动条。
+ */
+/*
+ * 三栏（设计稿 `.music-layout`）：255 / 自适应 / 270，栏间 14，外内距 24 24 12。
+ * 三栏都是**一张白卡**（左资料库 / 中内容 / 正在播放），卡与卡之间靠 14 的沟壑分开，
+ * 而不是靠描边把整片切成三块。
+ */
+/*
+ * 三栏（设计稿 `.music-layout`）：255 / 自适应 / 270，栏间 14。
+ * 三栏都是**一张白卡**（左资料库 / 中内容 / 正在播放），卡与卡之间靠 14 的沟壑分开，
+ * 而不是靠描边把整片切成三块。
+ *
+ * ⚠️ **左右内距不在这里给**：右侧（侧栏以东）是"工具条 + 内容"的**一个整体**，
+ * 左右留白由 `.shell` 统一负责。这里再给 24px 就会出现**第二层左内距** ——
+ * 左栏卡片比工具条标题再缩进一截，「侧栏与工具条不在一条线上」。
+ *
+ * ⚠️ **上内距也不给**：`.content` 自己已有 26px 上内距，这里再来 24px
+ * 就等于三栏与工具条之间隔了 50px —— 工具条像飘在上面，不像这一屏的头部。
+ * 只保留下内距 12（三栏与底部播放条之间的呼吸位）。
+ */
+.music-layout {
+  display: grid;
+  grid-template-columns: 255px minmax(0, 1fr) 270px;
+  gap: 14px;
+  padding: 0 0 12px;
+  min-height: 0;
+  overflow: hidden;
+  flex: 1;
+}
+
+/*
+ * 左资料库（设计稿 `.music-side`）：**一整张白卡** —— 白面 + 描边 + r26 + 一层弥散阴影，
+ * 内距 12/11/10。卡内三段：`.ms-tabs`（固定）→ `.ms-scroll`（唯一滚动层）→ `.ms-foot`（固定）。
+ * 旧写法是"半透明底 + 右侧一条分隔线"，再在里头套一张 `.music-card` —— 卡中卡，
+ * 层级只剩一档，且滚动时那张内卡不跟着走，边缘会切内容。
+ */
+.music-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 11px 10px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+  overflow: hidden;
+}
+
+/* 左栏底部账号行（设计稿 `.ms-foot` / `.ms-account`）：贴底、单行、点开账号菜单或登录 */
+
+/* ---------------------------------------------------------------- 工具条账号入口
+/*
+ * 账号按钮住在工具条右侧动作组（`.toolbar-actions`），形态是"一枚小胶囊"：
+ * 头像 + 昵称 + 一枚箭头。它在**任何屏任何 Tab 下位置都恒定** —— 这是它从
+ * 左栏底部（`.ms-foot`）上移的理由：身份状态不属于某个列表。
+ */
+.toolbar-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 9px 0 5px;
+  border-radius: var(--miao-r-xl);
+}
+.toolbar-account .ms-avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+}
+/*
+ * 账号文字块（设计稿 \`.ms-account-tx\` 的两行结构）：
+ * **strong 昵称在上（10.5px / 700 / ink）、small 平台·状态在下（9.5px / muted）**。
+ * 昵称单独一行时看不出"这是哪个平台的账号"，所以平台名在第二行、且必须出现。
+ */
+.toolbar-account-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  max-width: 108px;
+  text-align: left;
+  line-height: 1.25;
+}
+.toolbar-account-tx strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--md-font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.toolbar-account-tx small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.ms-foot {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--miao-line);
+  padding: 10px 6px 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ms-account {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+  padding: 4px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  text-align: left;
+  transition: background var(--miao-dur-fast) ease;
+}
+.ms-account:hover {
+  background: var(--miao-surface-2);
+}
+.ms-avatar {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--miao-surface-3);
+  color: var(--miao-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+/* 已登录：头像取**平台色**（`--pc` 由 SideAccount 注入），首字母反白。
+   ⚠️ 原来这里写死 `--miao-primary`：注释说"平台主色"，实际四个平台一个色 —— 现在才名副其实。 */
+.ms-avatar.is-on {
+  background: var(--pc, var(--miao-primary));
+  color: #fff;
+}
+.ms-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ms-account-tx {
+  min-width: 0;
+  flex: 1;
+}
+.ms-account-tx strong {
+  display: block;
+  font-size: 10px;
+  color: var(--miao-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ms-account-tx small {
+  font-size: 8.5px;
+  color: var(--miao-muted);
+}
+.ms-account-chev {
+  flex: 0 0 auto;
+  color: var(--miao-faint);
+}
+
+/*
+ * 中内容（设计稿 `.music-center`）：唯一随窗口伸缩的一栏，**本身是一张白卡**
+ * （白面 + 描边 + r26 + 弥散阴影，内距 24/27/28）。底部不再留 100 给播放条 ——
+ * 播放条现在住在 `.music-layout` 之外（设计稿如此），让位由外层负责。
+ */
+/*
+ * 中栏（设计稿 `.music-center`）：**flex 列 + 自身不滚**。
+ *
+ * 结构：顶行（固定）→ `.music-view`（flex:1，**唯一滚动层**）。
+ * 这样歌单详情的曲目表才能"占满剩余高度、超出才滚"（#14）——
+ * 顶行与英雄区钉在原地，只有曲目表内部滚，用户翻页时不会找不到表头。
+ *
+ * ⚠️ 此前这里是 `overflow-y: auto` 的滚动容器，表格只能按内容高度长，
+ * 长歌单会把整张卡顶出滚动条、短歌单下面空一大片 —— 两个方向都不对。
+ */
+.music-center {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 24px 27px 28px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+}
+
+/* 右「正在播放」（设计稿 `.music-now`）：一张白卡，内距 22，自身滚动 */
+.music-now {
+  min-height: 0;
+  padding: 22px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+  overflow-y: auto;
+}
+
+/* ---------------------------------------------------------------- 右栏 · 正在播放 */
+/*
+ * 右栏信息卡（设计稿 `.now-card`）：内距 8/6/14、圆角 20、纵向 gap 10。
+ * 一层极淡底 + 描边，与右栏的白卡（`.music-now`）形成"卡中一格"的层级 ——
+ * 所以它的圆角(20)比外卡(26)小一档、内距也更紧。
+ */
+
+/*
+ * 右栏空态（`.now-empty`）：设计稿没有给这一块单独的类，但**右栏空着时会露出纯白**，
+ * 与旁边那块有内容的信息卡放在一起像是"加载失败"。这里按设计稿的渐变语言自行延展：
+ * 取 hero 那两笔（天蓝 → 杏奶）压到很淡，让它读作"这块在等你放歌"，而不是"这块坏了"。
+ * 插画沿用统一的 `.mascot-svg`（与其它空态同一只猫）。
+ */
+.now-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 260px;
+  padding: 28px 16px;
+  border: 1px dashed var(--miao-line-strong);
+  border-radius: var(--miao-r-lg);
+  text-align: center;
+  background:
+    radial-gradient(220px 160px at 82% 8%, rgba(255, 255, 255, 0.7), transparent 62%),
+    linear-gradient(150deg, var(--miao-primary-soft) 0%, var(--miao-surface) 52%, var(--miao-accent-soft) 130%);
+}
+.now-empty-art {
+  width: 88px;
+  height: 74px;
+  margin-bottom: 4px;
+  opacity: 0.9;
+}
+.now-empty-art .mascot-svg {
+  width: 100%;
+  height: 100%;
+}
+.now-empty h3 {
+  margin: 0;
+  font-family: var(--md-font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.now-empty p {
+  margin: 0;
+  max-width: 200px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--miao-muted);
+}
+.now-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 6px 14px;
+  border-radius: var(--miao-r-lg);
+  background: var(--miao-surface-2);
+}
+/* 封面（设计稿 `.now-art`）：1:1、r14、只留一层投影（不描边 —— 右栏底色本身就够分） */
+.now-art {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--miao-surface-2);
+  box-shadow: 0 16px 30px -22px rgba(43, 47, 55, 0.5);
+}
+/*
+ * ⚠️ 里头复用的是共享 `Cover`（`.music-cover`）—— 它默认带**列表行的小封面尺寸**
+ * （38×38 / r9）。不在这里覆盖的话，容器有 212 高、图片却只有 38，
+ * 封面会缩在左上角一小块，剩下的全是空白底。
+ * 所以右栏这一处要把 `.music-cover` 连同里面的 img 一起撑满（图片用 cover 裁切，
+ * 保持比例不变形）。
+ */
+.now-art .music-cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  border: 0;
+}
+.now-art .music-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.now-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.now-title {
+  font-family: var(--md-font-display);
+  font-size: 15px;
+  line-height: 1.35;
+  margin-top: 2px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.now-artist {
+  font-size: 11px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 眉标行（设计稿 `.now-head`）：NOW PLAYING + 展开播放器 */
+.now-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/*
+ * 「NOW PLAYING」眉标（设计稿 \`.kicker\` 生效值）：8.5px / 700 / .15em / faint / uppercase。
+ * \`flex: 1\` 让它吃掉中间的空隙，把右侧那枚展开按钮推到最右。
+ */
+.now-head .kicker {
+  flex: 1;
+  font-family: var(--md-font-display);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--miao-faint);
+  text-transform: uppercase;
+}
+/*
+ * 歌词预览（设计稿 `.now-lyrics`）：上下各一条**虚线**分隔，最小高 88 ——
+ * 最小高是为了"有歌词 / 纯音乐"两态不跳动：否则切歌时下面四格统计会上下窜。
+ */
+.now-lyrics {
+  margin-top: 4px;
+  padding: 12px 0 6px;
+  border-top: 1px dashed var(--miao-line);
+  border-bottom: 1px dashed var(--miao-line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 88px;
+}
+.now-lyric-line {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--miao-faint);
+  transition: color var(--miao-dur-base) ease;
+}
+.now-lyric-line.is-active {
+  color: var(--miao-ink);
+  font-weight: 700;
+}
+.now-lyric-line.is-active::before {
+  content: '♪ ';
+  color: var(--miao-primary-ink);
+}
+/* 动作行（设计稿 `.now-actions`）：主按钮吃满剩余宽度 + 收藏 */
+.now-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.now-actions .btn {
+  flex: 1;
+  min-width: 0;
+}
+/* 四格统计（设计稿 `.now-stats`）：2×2，每格浅底 + 描边 */
+.now-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: minmax(0, 1fr);
-  gap: 12px;
-  flex: 1;
-  min-height: 0;
+  gap: 6px;
+}
+.now-stat {
+  padding: 8px 9px;
+  border-radius: 9px;
+  background: var(--miao-surface-2);
+  border: 1px solid var(--miao-line);
+}
+.now-stat span {
+  display: block;
+  font-size: 8.5px;
+  color: var(--miao-muted);
+}
+.now-stat strong {
+  font-size: 11px;
+  color: var(--miao-ink);
+}
+
+/* 空态（右栏没有在播曲目时）：无边框、只留两行字 */
+.empty.is-plain {
+  padding: 36px 10px;
+  border: 0;
+  background: transparent;
 }
 
 .music-card {
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
-  padding: 13px;
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  padding: 15px;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  box-shadow: var(--miao-shadow-1);
 }
+/*
+ * 中间列的视图体（设计稿 `.music-view`）：**不是卡片** —— 中间列本身就是滚动区，
+ * 里面的每一节（Hero / 入口卡 / 榜单 / 歌单）各自带表面。
+ * 旧写法把整列包进一张 `.music-card`：白底 + 描边 + 阴影各一层，于是里面的卡片全都
+ * "卡中卡"，层级只剩一档；整列滚动时那张大卡不跟着走，边缘还会切内容。
+ * `view-in` 是设计稿的视图切换过渡（4px 上浮 + 淡入），比整块硬切自然。
+ */
+/*
+ * 中栏视图（设计稿 `.music-view`）：直接承载各个视图的节，没有中间包裹层。
+ *
+ * **中栏唯一的滚动层**：`flex: 1` + `overflow-y: auto`。它有一个确定的高度
+ * （来自 `.music-center` 的 flex 列），所以子级的 `flex: 1` 能算出"剩余空间"——
+ * 歌单详情的曲目表因此能占满下部并自己滚（#14）。
+ * `scroll-behavior: smooth` 让"回到顶部"之类的跳转是滑上去的，不是闪上去的。
+ */
+.music-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  animation: miao-view-in var(--miao-dur-base) var(--miao-ease-out);
+}
+@keyframes miao-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/*
+ * 节头（设计稿 `.mc-section-head`）：**底对齐**（标题两行、右侧一枚 link-btn 贴底），
+ * gap 10、下距 9。`.music-card-title` 就是设计稿的 `h2`（15px / 700），
+ * `.music-card-sub` 是它的 `.sub`（10px / muted / 上距 1）。
+ */
+.mc-section-head,
 .music-card-hd {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 10px;
   flex: 0 0 auto;
   margin-bottom: 9px;
 }
 .music-card-title {
   font-family: var(--md-font-display);
-  font-size: 12.5px;
+  font-size: 15px;
   font-weight: 700;
-  color: var(--md-ink);
+  letter-spacing: 0.005em;
+  color: var(--miao-ink);
+  line-height: 1;
 }
 .music-card-sub {
-  font-size: 11px;
-  color: var(--md-muted);
+  font-size: 10px;
+  color: var(--miao-muted);
+  margin-top: 1px;
   flex-shrink: 0;
 }
 /* 卡片内的主体：占满余高，内部列表各自滚动 */
@@ -615,167 +1157,664 @@
   flex-direction: column;
 }
 /* 右栏正文（搜索结果 / 发现）同构于 body */
-.music-rightbody {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.music-sec {
+
+/* 首页的节（设计稿 `.mc-section`）：节与节之间 20 的固定间距，节内是"节头 + 内容" */
+.mc-section {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
+  margin-top: 20px;
+}
+
+/*
+ * ── 首页 Hero（设计稿 `.music-hero`）─────────────────────────────────
+ *
+ * 两列：左侧文案（眉标 + 标题 + 一句描述 + 行动），右侧黑胶。底色是
+ * 「表面 → 次级表面 → 杏奶淡」的 120° 渐变，右上角一枚极淡的杏奶圆环 —— 这两笔是
+ * 设计稿里唯一的"装饰"，去掉后这块就退化成一张普通白卡，与下面的榜单区没有主次。
+ */
+/*
+ * 首页 Hero（设计稿 `.music-hero` 的**生效值**，取自后加载的 theme 分片）：
+ * `1.28fr / .72fr` 两列、gap 20、内距 `clamp(24px, 2.6vw, 38px)`、
+ * 圆角 `--r-2xl`(32)、最小高 `clamp(230px, 25vh, 300px)`。
+ *
+ * ⚠️ 基础表写的是 `1.25fr/.75fr + gap 18 + padding 22/24 + --r-xl` —— 按基础表改会得到
+ * 一圈明显更窄的卡片（实测差 16px 内距与 6px 圆角）。
+ */
+.music-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.28fr) minmax(200px, 0.72fr);
+  gap: 20px;
+  align-items: center;
+  padding: clamp(24px, 2.6vw, 38px);
+  border: 1px solid color-mix(in srgb, var(--miao-primary-line) 70%, var(--miao-line));
+  border-radius: var(--miao-r-2xl);
+  background:
+    radial-gradient(520px 260px at 88% 12%, rgba(255, 255, 255, 0.7), transparent 62%),
+    radial-gradient(460px 300px at 8% 96%, rgba(223, 164, 125, 0.22), transparent 64%),
+    linear-gradient(128deg, var(--miao-primary-soft) 0%, var(--miao-surface-2) 48%, var(--miao-accent-soft) 120%);
+  box-shadow: var(--miao-shadow-1);
+  min-height: clamp(230px, 25vh, 300px);
+}
+/*
+ * hero 右上角那圈：原本只是一道淡描边圆，现在放**黑胶**（与播放条碟片同一观感）。
+ * 它比左边的封面小一档且压在渐变里（opacity .5），读作"背景里的一张唱片"，
+ * 不抢主封面 —— 主封面是每日推荐的第一首歌（见 `.hero-cover-spin`）。
+ */
+.music-hero::after {
+  content: '';
+  position: absolute;
+  right: 12%;
+  top: -30%;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  border: 1px solid var(--miao-accent-line);
+  background: radial-gradient(circle at 50% 50%, #2f3236 0 18%, #3d4045 19% 20%, #2b2d31 21% 100%);
+  opacity: 0.5;
+  pointer-events: none;
+  animation: hero-vinyl-spin 24s linear infinite;
+}
+/* 伪元素不能复用 `.hero-vinyl` 的 spin（那条带 translateY），故单独一条 */
+@keyframes hero-vinyl-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.hero-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+/*
+ * 首页眉标（设计稿 \`.kicker\` 生效值）：8.5px / 700 / .15em / faint / uppercase。
+ * 图标与文字之间 5px —— 眉标小到只剩一条纹理，图标大过文字就反客为主了。
+ */
+.hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 9px;
+  font-family: var(--md-font-display);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--miao-faint);
+  text-transform: uppercase;
+}
+/*
+ * hero 眉标右侧的刷新键（每日推荐）。
+ * 它挂在眉标里而不是动作区 —— 动作区是「播放全部 / 查看歌单」这类主操作，
+ * 刷新是轻动作，混进去会让主次颠倒。
+ */
+.hero-refresh {
+  margin-left: 2px;
+  padding: 0 3px;
+  height: 16px;
+  color: var(--miao-faint);
+}
+.hero-refresh:hover:not(:disabled) {
+  color: var(--miao-muted);
+}
+.hero-copy h2 {
+  font-family: var(--md-font-display);
+  font-size: clamp(22px, 2.6vw, 32px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--miao-ink);
+}
+.hero-copy p {
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--miao-muted);
+}
+.hero-actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.hero-art {
+  position: relative;
+  /*
+   * 层级要在 `.music-hero::after`（右上角那张背景黑胶）**之上**：
+   * 伪元素在 DOM 顺序上最后，默认会盖住同级的子元素；
+   * 这里的主封面是"正在放的那一面"，不能被背景唱片压住。
+   * 与 `.hero-copy` 同为 z-index 1，两者互不遮挡。
+   */
+  z-index: 1;
+  width: 100%;
+  max-width: 200px;
+  aspect-ratio: 1;
+  justify-self: end;
+}
+/*
+ * 主封面：**每日推荐第一首歌的封面**，缓慢自转（30s 一圈，比黑胶的 24s 更慢 ——
+ * 它是"正在放"的那一面，转太快会晃眼）。
+ * 圆形裁切 + 中心孔，与黑胶同一套唱片语言；拿不到封面时这个元素不渲染（回退黑胶）。
+ */
+.hero-cover-spin {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  aspect-ratio: 1;
+  margin-top: -50%;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 16px 30px -18px color-mix(in srgb, var(--miao-ink) 55%, transparent);
+  animation: hero-cover-spin 30s linear infinite;
+}
+.hero-cover-spin img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+@keyframes hero-cover-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* 黑胶：径向渐变的唱片 + 中心杏奶标 + 一圈内环，24s 匀速转（与播放条碟片同一观感） */
+.hero-vinyl {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, #2f3236 0 18%, #3d4045 19% 20%, #2b2d31 21% 100%);
+  box-shadow: 0 16px 30px -18px color-mix(in srgb, var(--miao-ink) 55%, transparent);
+  animation: spin 24s linear infinite;
+}
+.hero-vinyl::after {
+  content: '';
+  position: absolute;
+  inset: 36%;
+  border-radius: 50%;
+  background: var(--miao-accent);
+  opacity: 0.8;
+}
+.hero-vinyl::before {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, #fff 6%, transparent);
+}
+/* 唱片自转（设计稿 `@keyframes spin`）：全仓只此一处定义，`prefers-reduced-motion` 下由 base 层统一降级 */
+@keyframes spin {
+  from {
+    transform: translateY(-50%) rotate(0deg);
+  }
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
+}
+
+/*
+ * ── 三枚入口卡（设计稿 `.entry-grid` / `.entry-card`）────────────────
+ *
+ * 图标底是主色淡片，右侧箭头常显：这三张卡是"去别处"的入口，
+ * 没有箭头就会被读成三块静态信息。
+ */
+/* 三枚入口卡（设计稿 `.entry-grid` 的**生效值**：gap 12，卡 r16 / padding 14） */
+.entry-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+/* 入口卡（设计稿 `.entry-card` 生效值）：padding 14 四边、圆角 16 —— 基础表写的是 12/13 与 13 */
+.entry-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-md);
+  background: var(--miao-surface);
+  text-align: left;
+  overflow: hidden;
+  transition:
+    transform var(--miao-dur-fast) var(--miao-ease-out),
+    box-shadow var(--miao-dur-fast) ease;
+}
+.entry-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--miao-shadow-1);
+}
+.entry-card:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.entry-card strong {
+  display: block;
+  font-size: 12px;
+  color: var(--miao-ink);
+}
+.entry-card small {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+.entry-ico {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--miao-r-sm);
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+}
+.entry-arrow {
+  margin-left: auto;
+  display: inline-flex;
+  color: var(--miao-faint);
+}
+
+/* 窄窗：Hero 收成单列、入口卡两列（设计稿 ≤1040px 档） */
+/*
+ * 窄窗三档（设计稿 §Responsive）：1320 收窄两侧、1180 去掉右栏。
+ * 不做的话，1100px 的窗口仍被左 234 + 右 252 吃掉 486px —— 中间栏只剩 600 出头，
+ * 歌曲行与 Hero 都开始挤；而"正在播放"在窄窗里本来就是**可以先让位**的那一栏
+ * （它是信息卡，不是控制台，控制都在底部播放条上）。
+ */
+@media (max-width: 1320px) {
+  .music-layout {
+    grid-template-columns: 220px minmax(0, 1fr) 232px;
+  }
+  .music-center {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .music-now {
+    padding: 16px;
+  }
+}
+@media (max-width: 1180px) {
+  .music-layout {
+    grid-template-columns: 214px minmax(0, 1fr);
+  }
+  .music-now {
+    display: none;
+  }
+}
+
+@media (max-width: 1040px) {
+  .music-hero {
+    grid-template-columns: 1fr;
+  }
+  .hero-art {
+    display: none;
+  }
+  .entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* 按钮（音乐屏内自足，不依赖全局 .btn 系列） */
 .music-btn {
-  border: none;
+  border: 1px solid transparent;
   border-radius: 999px;
-  padding: 5px 11px;
-  font-size: 11.5px;
-  font-family: var(--md-font-body);
+  padding: 5px 12px;
+  font-family: var(--md-font-display);
+  font-size: 12px;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    transform var(--miao-dur-fast) var(--miao-ease-spring),
+    background var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease;
+}
+.music-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.music-btn:active:not(:disabled) {
+  transform: scale(0.96);
 }
 .music-btn.pri {
-  background: var(--md-pink);
+  background: var(--miao-accent);
+  border-color: color-mix(in srgb, var(--miao-accent) 82%, #000);
   color: #fff;
+  box-shadow: 0 8px 18px -12px color-mix(in srgb, var(--miao-accent) 70%, transparent);
+}
+.music-btn.pri:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--miao-accent) 86%, #2d3b46);
 }
 .music-btn.out {
   background: transparent;
-  border: 1px solid var(--md-pink);
-  color: var(--md-pink);
+  border-color: var(--miao-line);
+  color: var(--miao-text);
+}
+.music-btn.out:hover:not(:disabled) {
+  border-color: var(--miao-accent-line);
+  background: var(--miao-accent-soft);
+  color: color-mix(in srgb, var(--miao-accent) 82%, #000);
 }
 .music-btn:disabled {
   opacity: 0.5;
   cursor: default;
+  transform: none;
 }
 
 .music-hint {
   flex: 0 0 auto;
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 11px;
+  color: var(--miao-muted);
   padding: 0 8px 6px;
 }
 .music-inline-err {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-error);
   padding: 2px 2px 6px;
 }
+/*
+ * 续加载条：只有一枚音波（居中）。
+ * 不带文字 —— 加载中这件事由音波自己表达，加一句「加载中…」是重复。
+ */
 .music-more {
   flex: 0 0 auto;
-  text-align: center;
-  font-size: 10.5px;
-  color: var(--md-muted);
-  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
 }
 
 /* ---------------------------------------------------------------- 左栏视图 Tab */
-.ltabs {
+/*
+ * 左栏的三段 Tab 已改用**通用单元** `ViewTabs`（`.ui-vtabs` / `.ui-vtab`，
+ * 样式住 `components.scss`）—— 与漫画屏的投放/队列/漫画库是同一个控件。
+ * 原来的 `.ms-tabs` / `.ms-tab` 两条规则退役（2026-10-26）。
+ */
+
+/* 视图区（设计稿 `.ms-scroll`）：左卡里唯一滚动的一层，Tab 与底部账号行固定 */
+/*
+ * 视图区（设计稿 `.ms-scroll`）：左卡里**唯一**滚动的一层，Tab 与底部账号行固定。
+ *
+ * `overflow-x: hidden` 不是"藏起横向滚动条"，而是**结构上不该有横轴**：
+ * 这一栏里的行都是宽度撑满的块（`.ms-group` → `.ms-caption` + `.ms-row`），
+ * 曾经因为行没有 `width: 100%`、内部又带 7px 内距，内容比容器宽 80px ⇒ 出现横向滚动条。
+ * 现在两侧都收住：容器不滚横轴，组与行都是撑满且 `min-width: 0` 的。
+ */
+.ms-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 2px 8px;
+}
+
+/* 组容器：撑满、且允许内部收缩（否则里面的长歌单名会把组撑宽） */
+/* 左栏歌单列表的骨架：行与真实 `.music-row` 同形（32 封面 + 两行文字） */
+.ms-skel-rows {
   display: flex;
-  gap: 4px;
-  flex: 0 0 auto;
-  margin-bottom: 10px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 2px;
 }
-.ltab {
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: none;
-  background: transparent;
-  color: var(--md-muted);
-  font-size: 11.5px;
-  font-family: var(--md-font-body);
-  cursor: pointer;
+.ms-skel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
 }
-.ltab:hover {
-  color: var(--md-ink-2);
+.ms-skel-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
 }
-.ltab.is-on {
-  background: var(--md-pink-soft);
-  color: var(--md-pink);
-  font-weight: 700;
+.ms-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+}
+
+/* 组内的歌单行：撑满组宽 —— 它复用共享的 `.music-row`，这里只补宽度约束 */
+.ms-group .music-row {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 行内文字块允许收缩（省略号生效的前提） */
+.ms-group .music-row-tx {
+  min-width: 0;
 }
 
 /* ---------------------------------------------------------------- 搜索框 + 搜索源胶囊 */
-.music-search-row {
-  display: flex;
-  gap: 8px;
-  flex: 0 0 auto;
-  margin-bottom: 8px;
-}
-.music-search {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid var(--md-line);
-  border-radius: 999px;
-  padding: 7px 13px;
-  font-size: 12px;
-  color: var(--md-ink);
-  background: var(--md-surface);
-  font-family: var(--md-font-body);
-}
-.music-search::placeholder {
-  color: var(--md-muted);
-}
-.music-search:focus {
-  outline: none;
-  border-color: var(--md-pink);
-}
+/*
+ * 中间列顶行（设计稿 `.music-topbar`）：平台胶囊 + 搜索框，**吸顶**，内距 `0 0 8`。
+ *
+ * 内距归**卡片**（`.music-center` 的 24/27/28），顶行自身只留 8 的底距 ——
+ * 设计稿实测顶行 718×40、pad `0 0 8`。负外边距抵消卡片的左右内距，
+ * 让吸顶条铺满卡片内宽；底色是卡面（`--miao-surface`）的渐变 + 模糊，
+ * 滚动内容才会在它下面淡出而不是被硬切。
+ */
+/*
+ * 中栏顶行（设计稿 `.music-topbar` 的**生效值**，取自后加载的 theme 分片）：
+ * `position: static` + `margin: 0 0 14px` + `padding: 0 0 8px` + **透明背景、无模糊**。
+ *
+ * ⚠️ 基础表写的是 `sticky / top 0 / z-index 8 / 负外边距 / 渐变底 + blur` —— 产品一直照那份写，
+ * 于是顶行会**浮在内容上层**：滚动时下面的搜索源条钻到它底下（视觉上"被盖住"），
+ * 而设计稿的意思是"它就是视图里普通的一行，跟着一起滚走"。
+ * 这条改完，之前为"被盖住"打的那个 `.music-view { padding-top }` 补丁也一并撤掉。
+ */
 
-.cap-row {
+/* ---------------------------------------------------------------- 结果页头（本地 / 历史）
+/*
+ * 设计稿 `.search-result-head`：左侧标题 + 说明，右侧动作组；`.local-actions` 是那组按钮。
+ * 用在「本地音乐」与「播放历史」这两个**右侧主体视图**上 —— 它们不是"一张卡"，
+ * 而是一屏：顶部说明这一屏是什么、能给几个动作，底下才是内容。
+ */
+.search-result-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  margin-bottom: 8px;
-  overflow-x: auto;
-  padding-bottom: 2px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
-.cap {
-  display: inline-flex;
+.search-result-head h2 {
+  margin: 0;
+  font-family: var(--md-font-display);
+  font-size: clamp(19px, 1.7vw, 26px);
+  font-weight: 700;
+  color: var(--miao-ink);
+  line-height: 1.2;
+}
+.search-result-head p {
+  margin: 2px 0 0;
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+.local-actions {
+  display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--md-line);
-  background: var(--md-surface);
-  color: var(--md-ink-2);
-  font-size: 11px;
-  font-family: var(--md-font-body);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+/* 本地视图底部的说明条（设计稿 `.notice`）：上距 12，不抢眼但必须读得到 */
+.local-note {
+  margin-top: 12px;
+}
+.music-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 0 0 8px;
+  background: transparent;
+}
+/*
+ * 搜索框（设计稿 `.music-search-box`）：**贴中栏最右**，输入框吃满剩余宽度。
+ *
+ * 早先是 `width: min(376px, 100%)` + `margin-left: auto` —— 推到右边了，
+ * 但宽度只有 376，右边还空着一大片，视觉上"没靠到底"。
+ *
+ * 后来改成纯 `flex: 1` 又走到另一个极端：855px 宽的输入框，平台胶囊被挤成左边一小条。
+ * 所以最终是"**有上限的弹性**"：`flex: 1` 吃满剩余，`max-width` 封顶 420 ——
+ * 窗口再宽搜索框也不再变宽，多出来的空间留给平台胶囊那一侧。
+ * 于是输入框与按钮的右缘 = 中栏内容区右缘（只差中栏自己的 27px 内距）。
+ */
+.music-search-box {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+}
+.music-search-ico {
+  flex: none;
+  color: var(--miao-muted);
+}
+/*
+ * 搜索框（设计稿 `.search-field` 的**生效值**）：一整块内凹底 + 1px 描边 + r10，
+ * 高 34、左右 10，图标 / 输入 / 清空都在框**内部**（`gap 7`）。
+ * 焦点时整块转主色边框 + 3px `primary-wash` 光晕 —— 这比"只给 input 描边"更像一个控件。
+ *
+ * `flex: 1` 让它吃满 `.music-search-box` 里除按钮外的全部宽度，
+ * 于是输入框右缘顶到按钮左边、按钮右缘顶到中栏内容区右缘。
+ */
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 10px;
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--miao-line);
+  border-radius: 10px;
+  background: var(--miao-surface-2);
+  color: var(--miao-muted);
+  transition:
+    border-color var(--miao-dur-fast),
+    background var(--miao-dur-fast),
+    box-shadow var(--miao-dur-fast);
+}
+.search-field:focus-within {
+  border-color: var(--miao-primary);
+  background: var(--miao-surface);
+  box-shadow: 0 0 0 3px var(--miao-primary-wash);
+}
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  /* 设计稿 `.search-field input` 是 `12px * --ui-scale`；不写死别的值，交给构建期换算 */
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--miao-ink);
+}
+.search-field input::placeholder {
+  color: var(--miao-faint);
+}
+.search-field-ico {
+  flex: none;
+  color: var(--miao-muted);
+}
+.search-clear {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--miao-surface-3);
+  color: var(--miao-muted);
+  flex: none;
+}
+
+/*
+ * 搜索源胶囊条（设计稿 `.search-sources`）：**只住在搜索结果页**，
+ * 不是视图顶部的常驻条 —— 它是"这次搜索该打哪些平台"的选择器，
+ * 首页 / 榜单 / 歌单页没有它要回答的问题。
+ *
+ * 形态：一条内凹底 + 描边 + r10 的横条（内距 8/10），里面是若干 r7 / 24 高的小胶囊。
+ */
+.search-sources {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--miao-line);
+  border-radius: 10px;
+  background: var(--miao-surface-2);
+}
+.search-source {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--md-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  border: 1px solid transparent;
+  background: transparent;
   cursor: pointer;
   white-space: nowrap;
-  flex-shrink: 0;
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease;
 }
-.cap:hover:not(:disabled) {
-  border-color: var(--md-pink);
+.search-source.is-active {
+  color: var(--miao-primary-ink);
+  background: var(--miao-primary-soft);
+  border-color: var(--miao-primary-line);
 }
-.cap.is-on {
-  border-color: var(--md-pink);
-  background: var(--md-pink-soft);
-  color: var(--md-pink);
-  font-weight: 700;
-}
-.cap:disabled {
-  opacity: 0.55;
+.search-source:disabled {
+  opacity: 0.38;
   cursor: not-allowed;
 }
-.cap-dot {
-  width: 7px;
-  height: 7px;
+/* 登录状态点：不写内联色值 —— 设计稿用"已登录=主色 / 未登录=离色"，主题切换时跟着走 */
+.search-source-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  flex-shrink: 0;
+  flex: none;
+  background: var(--miao-primary);
 }
-.cap-note {
+.search-source-dot[data-on='no'] {
+  background: var(--miao-muted);
+}
+.search-source-hint {
   margin-left: auto;
-  padding-left: 8px;
-  font-size: 10px;
-  color: var(--md-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
+  font-size: 8.5px;
+  color: var(--miao-faint);
 }
 
 /* ---------------------------------------------------------------- 歌曲列表 */
@@ -787,87 +1826,113 @@
   flex: 1;
   min-height: 0;
 }
-/* 队列抽屉的行容器自带上下留白（等价原 .music-drawer-list 的 padding: 6px 0） */
+/* 队列抽屉的滚动列表：留白交给 `.qd-row` 自己（7px），这里不再叠一层 */
 .ui-vlist.is-drawer {
-  padding: 6px 0;
+  padding: 0;
 }
 /*
- * 歌单分组头（创建的歌单 / 收藏的歌单）—— 可点击收起/展开，**默认展开**。
- *
- * 最终形态（2026-10-12 定稿）：**纯文字行**，不要背景、不要圆角、不要左侧图标、
- * 不要底部分隔线 —— 分组头只承担"这一行的标题是什么"，
- * 任何底色/形状/图标都属于额外装饰，加了反而显得吵（用户明确要求）。
- *
- * 保留的两处设计约定：
- *   · 文字用 `.set-subtitle` 的口径（display 字体 / 700 / muted），
- *     与设置页的小节标题同一层，只是字号略大（12.5px）以匹配左栏的信息密度；
- *   · 折叠箭头 `ChevronDown` 在右侧，收起时旋转 -90° 朝右。
- *
- * ⚠️ 高度写死 26px 是**自包含**的（不依赖 VirtualList 的行高）：
- * 外层用 height:100% + align-items:center 把它垂直居中，所以调用方换 itemHeight
- * 时照样居中，不会脱节。—— 别把 26px 改成百分比，那会随行高变形。
+ * 分组头（设计稿 `.ms-caption`）：「创建的歌单 / 收藏的歌单」这类小节标签。
+ * 9px / 700 / .11em / faint，右侧可挂一枚 20 高的小动作按钮（刷新）。
+ * 设计稿这里是**纯标签**、没有折叠态 —— 分组永远是展开的。
  */
-.music-plgroup {
+/*
+ * 组头（设计稿 `.ms-caption`）：227×32、pad 7/6/5、gap 6，
+ * 9px / 700 / `letter-spacing .11em` / `text-transform: uppercase` / faint。
+ *
+ * 字距与全大写是设计稿的**原样设定**（中文在字距下读作"疏排的标签"，是这一层的视觉语言）；
+ * 刷新键挂在组头右端，且它自己要把字距与大写**清回 0/none**（按钮文字不是标签）。
+ */
+.ms-caption {
   display: flex;
   align-items: center;
-  height: 100%;
-  /* 左右各收 6px：内容不贴面板边缘 */
-  padding: 0 6px;
-  cursor: pointer;
-  user-select: none;
-}
-.music-plgroup-pill {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  height: 26px;
-  padding: 0 12px 0 0;
-}
-.music-plgroup-lb {
-  font-family: var(--md-font-display);
-  font-size: 12.5px;
+  gap: 6px;
+  padding: 7px 6px 5px;
+  font-size: 10px;
   font-weight: 700;
-  color: var(--md-muted);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.11em;
+  color: var(--miao-faint);
+  text-transform: uppercase;
 }
-.music-plgroup-ct {
-  font-size: 10.5px;
-  color: var(--md-muted);
+/*
+ * 组头**可折叠**（#16）：歌单一多，收藏组能把创建组顶到看不见。
+ * 折叠态只靠"行不见了"表达 —— **不加箭头图标**：设计稿的 `.ms-caption` 里没有箭头，
+ * 多一枚箭头会让这行小标签从"纹理"变成"按钮"，层级就重了。
+ * 收起时把上下内距压到 3px：它现在只是一行标题，不该还占着一整行的呼吸位。
+ */
+button.ms-caption {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--miao-dur-fast);
 }
-.music-plgroup-chev {
-  flex: 0 0 auto;
-  color: var(--md-muted);
-  transition: transform 0.18s ease-out;
+button.ms-caption:hover {
+  color: var(--miao-muted);
 }
-/* 收起时箭头朝右（-90°），展开时朝下 —— 与常见折叠控件一致 */
-.music-plgroup.is-shut .music-plgroup-chev {
-  transform: rotate(-90deg);
+button.ms-caption.is-collapsed {
+  padding-top: 3px;
+  padding-bottom: 3px;
+  opacity: 0.72;
 }
+.ms-caption .text-btn {
+  margin-left: auto;
+  height: 20px;
+  /*
+   * 11px：组头这枚「刷新」要比组头文字（10px）稍大一点 ——
+   * 它是这一组里唯一的动作，不该和组名混在同一个视觉重量上；但也不要大到抢组名。
+   */
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* 组内空态（设计稿 `.ms-empty`）：24/10 内距 + 居中 + 10px muted。
+   与通用 `Empty` 不同 —— 这一句是**组内**的一行说明（如"还没有创建歌单"），
+   不是整块视图的空态，所以不占满高度、也没有图标位。 */
+.ms-empty {
+  padding: 24px 10px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--miao-muted);
+}
+
+/*
+ * 列表行（设计稿 `.ms-row` 的**生效值**）：227×46 = pad 7 + 封面 32 + pad 7，r12，gap 8。
+ *
+ * ⚠️ 基础表写的是 `padding: 6px; border-radius: 9px`，但后加载层把它调成 7 / 12 ——
+ * 按基础表改会得到 44 高的行（比设计稿矮 2px），肉眼几乎看不出、但整列会差出几十像素。
+ * 高亮态是 `.is-active`（primary-soft 底），**不加位移** —— 悬停时整行横向抖 1px
+ * 在长列表里会读成"整页在动"。
+ */
 .music-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: var(--md-radius-sm);
+  gap: 8px;
+  padding: 7px;
+  border-radius: 12px;
   cursor: pointer;
+  transition: background var(--miao-dur-fast) ease;
 }
 .music-row:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
 .music-row.is-hot {
-  background: var(--md-pink-soft);
+  background: var(--miao-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--miao-accent-line);
 }
 .music-row.is-hot .music-row-tx b {
-  color: var(--md-pink);
+  color: color-mix(in srgb, var(--miao-accent) 78%, #000);
   font-weight: 700;
 }
 .music-cover {
   width: 40px;
   height: 40px;
-  border-radius: var(--md-radius-xs);
+  border-radius: 10px;
   flex-shrink: 0;
-  background: linear-gradient(140deg, var(--md-lavender), var(--md-blue));
+  background: linear-gradient(140deg, var(--miao-accent-soft), var(--miao-primary-soft));
+  border: 1px solid var(--miao-line);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -879,30 +1944,38 @@
   object-fit: cover;
   display: block;
 }
+/* 左栏行的封面比中间列小一档（设计稿 `.ms-row .cover-art` 生效值 32 / r9） */
+.ms-row-cover,
+.music-side .music-cover {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  flex: none;
+}
 .music-row-tx {
   flex: 1;
   min-width: 0;
 }
 .music-row-tx b {
   display: block;
-  font-size: 12.5px;
-  font-weight: 400;
-  color: var(--md-ink);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .music-row-tx span {
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 10px;
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   display: block;
 }
 .music-dur {
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 10px;
+  color: var(--miao-muted);
   flex-shrink: 0;
   font-family: var(--md-font-numeric);
 }
@@ -912,26 +1985,730 @@
   gap: 2px;
   flex-shrink: 0;
 }
+/*
+ * 行内红心：**已收藏 = 标红**（实心 + 红），未收藏 = 空心 + muted。
+ *
+ * 颜色不用 `--miao-danger`（那是"出错"的红）：红心是"我喜欢"，语义上更接近
+ * 设计稿 `--accent` 那一档暖色，与皮肤主色同源，不会和错误提示抢注意力。
+ */
+.song-like {
+  color: var(--miao-muted);
+  transition:
+    color var(--miao-dur-fast),
+    transform var(--miao-dur-fast);
+}
+.song-like:hover {
+  color: var(--miao-accent-ink);
+}
+.song-like.is-liked {
+  color: var(--miao-like);
+}
+.song-like.is-liked:hover {
+  color: color-mix(in srgb, var(--miao-like) 82%, #000);
+}
 
-/* 播放历史的来源标签（品牌色圆点 + 平台名） */
-.his-src {
-  width: 34px;
-  flex-shrink: 0;
+/* 历史行的第二行：平台色点 + 平台名 + 相对时间（同一行内联，不再单占一列） */
+.his-meta {
   display: inline-flex;
-  flex-direction: column;
   align-items: center;
-  gap: 3px;
-  font-size: 9px;
-  color: var(--md-muted);
+  gap: 4px;
 }
 .his-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  display: block;
+  display: inline-block;
+  flex: none;
 }
 
 /* ---------------------------------------------------------------- 官方榜单 */
+
+/* ---------------------------------------------------------------- 官方榜单卡
+/*
+ * 首页「官方榜单」（设计稿 `.chart-grid` + `.chart-card` + `.chart-row`）。
+ *
+ * **两列**网格（设计稿在 theme 分片里刻意从四列收到两列：353px 的卡里塞 5 行排行才读得清，
+ * 四列会窄到歌名只剩几个字）。每张卡 = 卡头（封面 + 榜名）+ 前 5 名排行。
+ * 生效值（运行时实测）：353×181 / pad 15 16 / r16 / gap 12 / 排行行 pad 3.5 0。
+ *
+ * 排行三列用 `grid` 而不是 flex：序号列定宽、歌手列右对齐定宽，歌名吃掉剩余 —— 三列在
+ * 几十张卡之间才会**纵向对齐**（flex 下每行按内容自然宽度排，扫读时会跳）。
+ */
+
+/*
+ * 节头的文字操作键（设计稿 `.link-btn`）：等宽 11px / 700 / muted，带一枚 12px 图标，
+ * 4px 内距 + r6，hover 转 primary-ink。
+ *
+ * 与 `.music-btn` 的区别是**语义层级**：`.music-btn` 是"这一块的操作按钮"（带描边/底色），
+ * `.link-btn` 是"节头右端的一个轻动作"（刷新 / 换一批）—— 设计稿里节头只该出现后者，
+ * 用带底色的按钮会把节头压得比标题还重。
+ */
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-family: var(--md-font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  cursor: pointer;
+  transition: color var(--miao-dur-fast);
+}
+.link-btn:hover:not(:disabled) {
+  color: var(--miao-primary-ink);
+}
+/*
+ * 「未登录」态的轻动作键：**不置灰、只压淡**。
+ *
+ * 置灰的按钮说不出"为什么不能点"；这里点下去会弹登录框，所以它必须看起来**还能点** ——
+ * 只是比常态弱一档（`--miao-faint`），读作"要登录才能用"。
+ */
+.link-btn.is-locked {
+  color: var(--miao-faint);
+}
+.link-btn.is-locked:hover {
+  color: var(--miao-primary-ink);
+}
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------- 推荐歌单卡
+/*
+ * 推荐歌单（设计稿 `.card-grid` + `.playlist-card`）：四列封面卡，gap 12。
+ * 卡 = 封面（1:1，r12）+ 歌单名 + 「N 首 · 作者」，右下角一枚圆形播放钮**浮在封面上**
+ * （设计稿 `.pl-play`：平时半透明可见、hover 变实心 —— 它既是装饰也是"点这里能播"的暗示）。
+ */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.playlist-card {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-md);
+  background: var(--miao-surface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform var(--miao-dur-fast) var(--miao-ease-out),
+    box-shadow var(--miao-dur-fast),
+    border-color var(--miao-dur-fast);
+}
+.playlist-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--miao-line-strong);
+  box-shadow: var(--miao-shadow-2);
+}
+.playlist-card-cv {
+  position: relative;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 1;
+}
+/* 封面吃满卡宽（`.music-cover` 默认 40 定宽，那是列表行的小图） */
+.playlist-card-cv .music-cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  border: 0;
+}
+.pl-play {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--miao-surface) 78%, transparent);
+  color: var(--miao-ink);
+  backdrop-filter: blur(6px);
+  transition: background var(--miao-dur-fast);
+}
+.playlist-card:hover .pl-play {
+  background: var(--miao-primary);
+  color: #fff;
+}
+.playlist-card strong {
+  display: block;
+  font-family: var(--md-font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.playlist-card small {
+  display: block;
+  margin-top: 1px;
+  font-size: 10px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 1180px) {
+  /* 窄窗：四列会把卡宽压到 120 以下，歌单名只剩两三个字 */
+  .card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---------------------------------------------------------------- 曲目表
+/*
+ * 今日精选的曲目表（设计稿 `.song-table`）：带表头的五列网格 ——
+ * 序号 / 歌曲（含封面）/ 专辑 / 时长 / 操作。
+ *
+ * 行仍复用共享的 `SongRow`（`.music-row`），这里只在 `.song-table` 作用域内把它的内部布局
+ * 改成"与表头同列"的网格 —— 否则搜索、历史、本地、队列那 6 个调用点会被一起改掉。
+ */
+.song-table {
+  border: 1px solid var(--miao-line);
+  border-radius: 13px;
+  background: var(--miao-surface);
+  overflow: hidden;
+  box-shadow: var(--miao-shadow-1);
+}
+.song-head,
+.song-table .music-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1.6fr) minmax(0, 1fr) 64px 86px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+}
+.song-head {
+  padding: 9px 14px;
+  background: color-mix(in srgb, var(--miao-surface-2) 70%, transparent);
+  border-bottom: 1px solid var(--miao-line);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--miao-muted);
+}
+/*
+ * 歌单详情的曲目表**占满剩余高度**（#14）。
+ *
+ * 设计稿里它是"英雄区 + 说明行之下撑满的一块"：表头固定，列表吃剩余高度，
+ * 只有内容真的超出时才滚。此前表高由内容决定 —— 短歌单时下面空一大片，
+ * 长歌单时又把整个中栏顶出去，两个方向都不对。
+ *
+ * `flex: 1` 现在能算出来，是因为 `.music-view` 是**有确定高度的滚动容器**
+ * （见上面 `.music-center` 的 flex 列说明）—— 在此之前 `.music-center`
+ * 自己滚、高度随内容涨，子级的 `flex: 1` 永远算不出剩余空间。
+ */
+.song-table.is-fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+.song-table.is-fill .ui-vlist {
+  flex: 1;
+  min-height: 0;
+}
+/*
+ * 底部状态条：**只在加载时渲染**（组件里 `loadingMore` 为真才出现）。
+ *
+ * 翻页全靠滚动（滚到距底 120px 内自动拉下一页），所以这里不再放"加载更多"按钮 ——
+ * 内容就是一枚音波 + 「加载中…」。
+ * 音波复用灵动岛的 `.di-wave`（同一个 keyframes：0.9s、5 根柱子高低错峰），
+ * 只是把它压小一档（岛里 16px 高 / 这里 14px）以配合 9.5px 的说明文字。
+ */
+.song-table-more {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--miao-line);
+  background: color-mix(in srgb, var(--miao-surface-2) 40%, transparent);
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.song-table-more .di-wave {
+  height: 14px;
+  gap: 2px;
+}
+.song-table-more .di-wave i {
+  width: 2px;
+  background: var(--miao-muted);
+}
+/* 行内的封面与文字块原来是 flex 子项，网格下要占住"歌曲"那一列 */
+.song-table .music-row {
+  border-radius: 0;
+}
+.song-table .music-row:hover {
+  background: var(--miao-surface-2);
+}
+.song-table .music-row.is-hot {
+  background: var(--miao-primary-soft);
+  box-shadow: none;
+}
+.song-table .music-row > .music-cover {
+  grid-column: 2;
+  grid-row: 1;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  justify-self: start;
+}
+.song-table .music-row > .music-row-tx {
+  grid-column: 2;
+  grid-row: 1;
+  padding-left: 46px;
+}
+.song-table .music-row > .music-row-tx b {
+  font-size: 12px;
+  font-weight: 700;
+}
+/*
+ * 序号列：**居中**。
+ *
+ * 右对齐时序号看起来是"贴在封面左边的一行小字"，而这一列上下都没有可对齐的边界；
+ * 居中之后它读作"这一行的编号"，与封面的中心线也更容易对上。
+ * `tabular-nums` 保留：序号逐行递增，等宽数字才不会在滚动时左右跳。
+ */
+.song-index {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--miao-faint);
+  text-align: center;
+}
+/*
+ * 曲目表的"专辑"列（设计稿 `.song-album`）。
+ * ⚠️ 它曾被我改名成 `.song-artist` —— 那是把**歌手**错填进了这一列（#17），
+ * 而歌手本该在标题下面那行（SongRow 默认取 `song.artist`）。
+ */
+.song-album {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.song-table .music-dur {
+  grid-column: 4;
+  grid-row: 1;
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+
+/* ---------------------------------------------------------------- 歌单详情（右侧）
+/*
+ * 设计稿 `renderPlaylistDetail()` 的四段：`.pd-top`（返回 + chip + 更多）→
+ * `.pd-hero`（封面 + 信息 + 动作）→ `.pd-toolbar`（一句顺序说明）→ 曲目表。
+ * 点左栏歌单时**只换右侧**，左栏保持列表 —— 这是设计稿的交互。
+ */
+.pd-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  /*
+   * 不许被压缩：`.music-view` 是 flex 列，下面的曲目表（加载态时是骨架屏）会把空间吃掉，
+   * 若这里默认可收缩，`.pd-top` / `.pd-hero` / `.pd-toolbar` 就会被挤扁 ——
+   * 而 `.pd-hero` 有 `overflow: hidden`，挤扁等于**把封面和标题裁掉**（看着像"显示不全"）。
+   *
+   * 实测（加载态、窗口 1100 宽）：hero 高度随窗口变矮而塌 ——
+   * 900 高时 164（封面 126 刚好）、700 高时 121（裁 5px）、620 高时 104（裁 22px）。
+   */
+  flex: 0 0 auto;
+}
+.pd-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-family: var(--md-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  transition:
+    background var(--miao-dur-fast),
+    color var(--miao-dur-fast);
+}
+.pd-back:hover {
+  background: var(--miao-surface-2);
+  color: var(--miao-ink);
+}
+.pd-top .icon-btn {
+  margin-left: auto;
+}
+.pd-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-2xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+  overflow: hidden;
+  /* 不许被压缩（同 `.pd-top` 的理由）：压扁 = 封面与标题被这个 overflow:hidden 裁掉 */
+  flex: 0 0 auto;
+}
+.pd-cover {
+  width: clamp(126px, 10vw, 166px);
+  height: clamp(126px, 10vw, 166px);
+  flex: none;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.pd-cover .music-cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  border: 0;
+}
+.pd-info {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  flex: 1;
+}
+/*
+ * 歌单详情的眉标（设计稿 \`.kicker\` 的**生效值**，取自 theme 分片）：
+ * 8.5px / 700 / \`letter-spacing .15em\` / \`--faint\` / uppercase。
+ *
+ * 基础表写的是 9.5px + \`--muted\` + .16em。这里按生效值改 —— 眉标是"小到几乎只是
+ * 一条纹理"的一行，字号差 1px 就会从"纹理"变成"正文"，层级就塌了。
+ */
+.pd-info .kicker {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--md-font-display);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--miao-faint);
+  text-transform: uppercase;
+}
+.pd-info h2 {
+  margin: 0 0 4px;
+  font-family: var(--md-font-display);
+  font-size: clamp(25px, 2.3vw, 34px);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--miao-ink);
+}
+.pd-info p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--miao-muted);
+}
+.pd-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 7px;
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.pd-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 13px;
+  flex-wrap: wrap;
+}
+.pd-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 0 8px;
+  /* 同 `.pd-top` / `.pd-hero`：固定内容，不被加载态的骨架屏挤扁 */
+  flex: 0 0 auto;
+}
+.pd-toolbar .caption {
+  font-size: 9.5px;
+  color: var(--miao-faint);
+}
+
+/* ---------------------------------------------------------------- 骨架屏
+/*
+ * 形状与真实组件**一一对应**（真机实测尺寸）：
+ * · 榜单卡 `.chart-card` 419×167（pad 15/16 · r16）、卡头 385×25、封面 100×100、3 行 273×19；
+ * · 推荐歌单卡 `.playlist-card` 203×247（pad 9 · r16）、封面 1:1；
+ * · 曲目行：序号 + 38 封面 + 标题/歌手两行 + 专辑 + 时长。
+ *
+ * 骨架屏的**全部价值**是"加载完成时布局不跳" —— 形状对不上就会整块位移，
+ * 那比转圈更糟。所以这里不写通用灰条，而是照着真实结构逐块摆。
+ */
+.chart-card.is-skel,
+.playlist-card.is-skel {
+  cursor: default;
+}
+/*
+ * 榜单卡骨架：**每一栏的内容居中**。
+ *
+ * 卡头留空后，内容只剩封面 + 3 行排行。但**必须保持真实卡的两栏结构**
+ * （左封面 / 右排行）—— 若改成纵向排列，卡高会从 207 缩回 164，
+ * 加载完成那一帧整张卡会"塌"一下。骨架屏的第一要务就是不跳版。
+ *
+ * 所以这里只让两栏各自**水平居中**：封面在左列居中、排行在右列居中。
+ */
+.chart-body.is-centered {
+  /*
+   * ⚠️ 这里**不能**用 `align-items: center` —— 那会让 grid 子项**不再 stretch**，
+   * 宽度改为"按内容算"，而内容的百分比宽度又依赖父宽 ⇒ 互相依赖、实测塌成 0。
+   * 居中改由子项自己负责（`.chart-rows` 满宽 + 内部条目居中）。
+   */
+  justify-items: stretch;
+}
+/*
+ * 排行列：**满宽**。
+ * 宽度塌成 0 的根因链：列宽按内容算 → 内容的百分比宽度按列宽算 → 循环依赖。
+ * 明确给 100% 就断了这个环。
+ */
+.chart-rows.is-centered {
+  width: 100%;
+  align-items: center;
+}
+/*
+ * 骨架的排行条：**普通块**，不是 flex 子项。
+ *
+ * ⚠️ 之前条直接放在 `.chart-row`（display:flex）里、宽度用百分比 ——
+ * flex 子项的百分比宽度按"剩余空间"再收缩，**实测塌成 0 宽**，
+ * 只剩 10px 高的一条竖线，视觉上就是三个"点"。
+ * 放进普通块后，百分比按块宽算，条才有真实长度。
+ *
+ * ⚠️ 这里**不能**用 `display: flex`（哪怕只为了居中）—— 那又变回 flex 子项、
+ * 百分比同样会塌。要居中就靠 `margin: 0 auto` + 固定宽度，
+ * 或者干脆让条**左对齐**（真实排行行也是左对齐的）。
+ */
+.chart-skel-bar {
+  width: 100%;
+  display: block;
+}
+.chart-card.is-skel:hover,
+.playlist-card.is-skel:hover {
+  transform: none;
+  box-shadow: var(--miao-shadow-1);
+}
+/* 榜单卡的封面骨架：与真实封面同尺寸同圆角 */
+.chart-skel-art {
+  border-radius: var(--miao-r-md);
+}
+/* 推荐歌单卡：封面 1:1 铺满卡宽（与真实 `.playlist-card-cv` 同规则） */
+.playlist-skel-cv {
+  width: 100%;
+  height: auto !important;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  display: block;
+}
+.playlist-skel-name,
+.playlist-skel-sub {
+  display: block;
+}
+/*
+ * 封面与歌名之间的 8px 间距：真实卡里这一段是封面元素自带的下边距，
+ * 骨架把封面换成了灰条，间距得显式补上，否则骨架卡比真实卡矮 8px。
+ */
+.playlist-skel-name {
+  margin-top: 8px;
+}
+/* 次行与歌名行的间距：真实是 1px（`small { margin-top: 1px }`），骨架照抄 */
+.playlist-skel-sub {
+  margin-top: 1px;
+}
+/* 曲目表骨架：行与真实 `.song-table .music-row` 同列宽与同内距 */
+.song-table.is-skel .song-head.is-skel {
+  color: var(--miao-faint);
+}
+.song-skel-rows {
+  display: flex;
+  flex-direction: column;
+}
+.song-skel-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1.6fr) minmax(0, 1fr) 64px 86px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+}
+.song-skel-no {
+  justify-self: center;
+}
+.song-skel-cv {
+  justify-self: start;
+}
+.song-skel-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.song-skel-album,
+.song-skel-dur {
+  justify-self: start;
+}
+.song-skel-dur {
+  justify-self: end;
+}
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.chart-card {
+  min-width: 0;
+  padding: 15px 16px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-md);
+  background: var(--miao-surface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform var(--miao-dur-fast) var(--miao-ease-out),
+    box-shadow var(--miao-dur-fast);
+}
+.chart-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--miao-shadow-2);
+}
+@media (max-width: 900px) {
+  /* 极窄窗：两列会把歌名挤到只剩两三个字，退成一列 */
+  .chart-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/*
+ * 卡头：**榜名 + 可选的更新说明**。
+ * 榜名是这一卡的主标题，比里面的歌名明显大一档（15px / 700），
+ * 眼睛先落在"这是哪个榜"上，再看下面流行的歌。
+ */
+.chart-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.chart-head strong {
+  min-width: 0;
+  font-family: var(--md-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 更新说明：只在接口给了频率时出现（没有就不渲染，不占位置） */
+.chart-update {
+  flex: none;
+  margin-left: auto;
+  font-size: 9.5px;
+  color: var(--miao-faint);
+  white-space: nowrap;
+}
+
+/* 正文两栏：左大封面（100px）+ 右侧 3 行排行 */
+.chart-body {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.chart-art {
+  width: 100px;
+  height: 100px;
+  flex: none;
+  border-radius: var(--miao-r-md);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(140deg, var(--miao-primary-soft), var(--miao-accent-soft));
+  font-family: var(--md-font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  box-shadow: 0 10px 22px -16px rgba(45, 59, 70, 0.5);
+}
+.chart-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.chart-rows {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/*
+ * 骨架行：真实排行行 19px 高（10.5px 字号的行高），骨架的灰条只有 10px ——
+ * 3 行差 27px，加载完成那一帧整张卡会长高一截。
+ * 同样用 `em`：真实行高随 `--ui-scale` 变化，骨架要跟着变。
+ */
+.chart-card.is-skel .chart-row {
+  min-height: 1.55em;
+}
+/*
+ * 排行行：**单行横排**「序号 歌名 - 歌手」。
+ * 两行式（歌名上 / 歌手下）在 380px 宽的卡里会把 3 行撑到近半张卡高，
+ * 且歌手被压成第二行小字后基本读不到 —— 摘要层用单行更合适。
+ */
+.chart-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--miao-text);
+  white-space: nowrap;
+}
+.chart-row i {
+  flex: none;
+  font-style: normal;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--miao-faint);
+}
+.chart-row b {
+  min-width: 0;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chart-sep {
+  flex: none;
+  color: var(--miao-faint);
+}
+.chart-row em {
+  min-width: 0;
+  font-style: normal;
+  font-size: 10px;
+  color: var(--miao-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .music-charts {
   display: flex;
   gap: 9px;
@@ -950,7 +2727,7 @@
 .music-chart-cv {
   width: 64px;
   height: 64px;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   overflow: hidden;
   background: linear-gradient(135deg, var(--md-lavender), var(--md-blue));
   display: flex;
@@ -968,16 +2745,16 @@
 }
 .music-chart span {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
   margin-top: 3px;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 「每日推荐」入口卡：设计稿指定渐变，仅网易云出现 */
+/* 「每日推荐」入口卡：杏奶 → 雾蓝的暖冷过渡（取主题语义色，不写死一组橙红） */
 .music-chart-cv.is-daily {
-  background: linear-gradient(135deg, #f6b26b, #e06666);
+  background: linear-gradient(135deg, var(--miao-accent), var(--miao-primary));
 }
 /* 3 列网格形态（酷狗/QQ）：铺满整行，封面自适应为正方形 */
 .music-charts.is-grid {
@@ -1004,14 +2781,14 @@
 .music-chart-name {
   width: 78px;
   height: 78px;
-  border-radius: var(--md-radius-sm);
-  background: linear-gradient(140deg, var(--md-pink), var(--md-lavender));
+  border-radius: 12px;
+  background: linear-gradient(140deg, var(--miao-accent), var(--miao-primary));
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.35;
   padding: 6px;
@@ -1019,15 +2796,28 @@
 }
 
 /* ---------------------------------------------------------------- 底部播放条 */
+/*
+ * 播放条（设计稿 `.pb-card`）：**浮起**的一块玻璃卡 —— 22 圆角、`blur(20px) saturate(1.3)`、
+ * 92% 半透明白、`0 24px 60px -30px` 的大投影、左右 18 内距。
+ *
+ * 与页面内容的层级关系靠这三样一起成立：半透明（能看见底下的内容流过）、模糊（底下的文字
+ * 不会干扰读数）、大而软的投影（"浮起来"而不是"贴在底下"）。去掉任何一样都会退回
+ * "又一张白卡"，与上面的内容区没有主次。
+ * 深色主题把透明白降到 88% —— 深底上太透会让播放条发灰。
+ */
 .music-player {
   flex: 0 0 auto;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
-  padding: 9px 13px;
+  background: color-mix(in srgb, var(--miao-surface) 92%, transparent);
+  border: 1px solid var(--miao-line);
+  border-radius: 22px;
+  padding: 0 18px;
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  box-shadow: 0 24px 60px -30px rgba(45, 59, 70, 0.5);
   display: flex;
   flex-direction: column;
   gap: 7px;
+  box-shadow: var(--miao-shadow-2);
 }
 .music-player-row {
   display: flex;
@@ -1036,13 +2826,18 @@
   position: relative;
 }
 .music-pb-cover {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--md-radius-xs);
-  background: linear-gradient(140deg, var(--md-pink), var(--md-lavender));
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: linear-gradient(140deg, var(--miao-accent), var(--miao-primary));
+  border: 1px solid var(--miao-line);
   flex-shrink: 0;
   overflow: hidden;
   cursor: pointer;
+  transition: transform var(--miao-dur-base) var(--miao-ease-spring);
+}
+.music-pb-cover:hover {
+  transform: translateY(-1px) scale(1.02);
 }
 .music-pb-cover img {
   width: 100%;
@@ -1057,16 +2852,17 @@
 }
 .music-pb-tx b {
   display: block;
+  font-family: var(--md-font-display);
   font-size: 12.5px;
-  font-weight: 500;
-  color: var(--md-ink);
+  font-weight: 700;
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .music-pb-tx span {
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 11px;
+  color: var(--miao-muted);
   display: block;
   white-space: nowrap;
   overflow: hidden;
@@ -1105,11 +2901,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .music-vol input[type='range'] {
-  --fill-c: var(--md-pink);
-  --track-c: var(--md-line);
+  --fill-c: var(--miao-accent);
+  --track-c: var(--miao-surface-3);
   width: 60px;
   height: 5px;
   -webkit-appearance: none;
@@ -1123,7 +2919,8 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: var(--md-pink);
+  background: var(--miao-accent);
+  box-shadow: 0 1px 3px rgba(45, 59, 70, 0.28);
 }
 
 /* 音质档位下拉：复用 units 的 Select（Radix），只把它的方形外观压成播放条里的胶囊。
@@ -1137,17 +2934,17 @@
   line-height: 18px;
   border-radius: 999px;
   border-color: transparent;
-  background: var(--md-pink-soft);
-  color: var(--md-pink);
+  background: var(--miao-accent-soft);
+  color: color-mix(in srgb, var(--miao-accent) 82%, #000);
 }
 .music-q-sel:hover {
-  border-color: var(--md-line);
+  border-color: var(--miao-accent-line);
 }
 /* 实际码率（kbps）。与"档位"分开显示：档位是**要的**，码率是**实际拿到的** ——
    平台降级时这两个值会不一致，只显示档位等于把降级藏了起来。 */
 .music-br {
   font-size: 10px;
-  color: var(--md-muted);
+  color: var(--miao-faint);
   font-family: var(--md-font-numeric);
   flex-shrink: 0;
   white-space: nowrap;
@@ -1161,15 +2958,15 @@
 }
 .music-prog-t {
   font-size: 10px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
   width: 34px;
   text-align: center;
   font-family: var(--md-font-numeric);
   flex-shrink: 0;
 }
 .music-prog-bar {
-  --fill-c: var(--md-pink);
-  --track-c: var(--md-line);
+  --fill-c: var(--miao-accent);
+  --track-c: var(--miao-surface-3);
   flex: 1;
   height: 5px;
   -webkit-appearance: none;
@@ -1184,12 +2981,13 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: var(--md-pink);
+  background: var(--miao-accent);
+  box-shadow: 0 1px 3px rgba(45, 59, 70, 0.28);
 }
 .music-q {
   font-size: 10px;
-  color: var(--md-pink);
-  background: var(--md-pink-soft);
+  color: color-mix(in srgb, var(--miao-accent) 82%, #000);
+  background: var(--miao-accent-soft);
   border-radius: 999px;
   padding: 2px 8px;
   flex-shrink: 0;
@@ -1200,7 +2998,7 @@
 .pf-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(30, 24, 52, 0.45);
+  background: color-mix(in srgb, var(--miao-ink) 28%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1209,11 +3007,11 @@
 .pf-panel {
   width: 100%;
   max-width: 380px;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
   padding: 16px 18px;
-  box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
+  box-shadow: var(--miao-shadow-2);
 }
 .pf-hd {
   display: flex;
@@ -1231,11 +3029,11 @@
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   cursor: pointer;
 }
 .pf-item:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
 .pf-chip {
   width: 26px;
@@ -1257,39 +3055,39 @@
   display: block;
   font-size: 12.5px;
   font-weight: 500;
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 .pf-desc {
   display: block;
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 11px;
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .pf-badge {
-  font-size: 10.5px;
+  font-size: 11px;
   padding: 2px 8px;
   border-radius: 999px;
   flex-shrink: 0;
 }
 .pf-badge.is-cur {
-  background: var(--md-pink-soft);
-  color: var(--md-pink);
+  background: var(--miao-accent-soft);
+  color: var(--miao-accent);
   font-weight: 700;
 }
 .pf-badge.is-on {
-  background: var(--md-surface-2);
-  color: #22c55e;
+  background: var(--miao-success-soft);
+  color: color-mix(in srgb, var(--miao-success) 80%, #000);
 }
 .pf-badge.is-off {
-  background: var(--md-surface-2);
-  color: var(--md-muted);
+  background: var(--miao-surface-2);
+  color: var(--miao-muted);
 }
 .pf-note {
   margin-top: 10px;
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 11px;
+  color: var(--miao-muted);
   line-height: 1.5;
 }
 
@@ -1304,11 +3102,11 @@
   top: 54px;
   right: 26px;
   width: 256px;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-md);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-md);
   padding: 10px;
-  box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
+  box-shadow: var(--miao-shadow-2);
   z-index: 81;
 }
 .ac-hd {
@@ -1324,14 +3122,14 @@
 .ac-txt b {
   display: block;
   font-size: 12.5px;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .ac-txt span {
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 11px;
+  color: var(--miao-muted);
 }
 .ac-list {
   display: flex;
@@ -1347,12 +3145,12 @@
   padding: 7px 6px;
   border: none;
   background: transparent;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   cursor: pointer;
   text-align: left;
 }
 .ac-item:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
 .ac-dot {
   width: 8px;
@@ -1364,7 +3162,7 @@
   flex: 1;
   min-width: 0;
   font-size: 12px;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1380,101 +3178,128 @@
   background: transparent;
   cursor: pointer;
   color: var(--md-error);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .ac-out:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
 
 /* ---------------------------------------------------------------- 队列抽屉 */
-.music-drawer-bd {
-  position: fixed;
-  inset: 0;
-  background: rgba(30, 24, 52, 0.28);
-  /* 71 / 72 这一对值是被下面这件事定死的：**展开播放器是 fixed z-index:70 的整屏覆盖层**，
-     而播放队列的入口同时存在于展开播放器里（右下角「播放队列」）。
-     抽屉若低于 70 就被它整个盖住 —— 用户点了"播放队列"却什么都没出现（曾如此）。
-     取 71/72：高于展开播放器，仍低于 Radix 弹层（80），弹层不会反过来被抽屉盖住。 */
-  z-index: 71;
-  /* 蒙层只做淡入（不跟着抽屉平移，理由见 .music-drawer 的注释） */
-  animation: music-drawer-bd-in 0.24s ease-out both;
+/* ---------------------------------------------------------------- 播放队列抽屉
+ * 容器：通用 `SideDrawer` 单元（`.ui-drawer`）+ 这里一条 `.queue-drawer` 修饰类。
+ * 设计稿的生效值（`theme-music.css` 覆盖了基础表）：362 宽、左侧 24 圆角；
+ * 头部 18/20/12、正文 0/12/16。内容三层 `.qd-section` / `.qd-caption` / `.qd-row`
+ * 与设计稿同名同层级 —— 抽屉里只放队列内容，不再自己画一张卡片。
+ */
+.queue-drawer {
+  width: min(362px, 100vw);
+  border-radius: 24px 0 0 24px;
 }
-@keyframes music-drawer-bd-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+.queue-drawer .ui-drawer-head {
+  padding: 18px 20px 12px;
 }
-.music-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 340px;
-  background: var(--md-surface);
-  border-left: 1px solid var(--md-line);
-  display: flex;
-  flex-direction: column;
-  z-index: 72;
-  /* 从右往左滑入：抽屉贴在窗口右缘，所以位移动画取 translateX(100%) → 0，
-     读起来就是"从右边抽出来"。只做进场（组件在关闭时直接卸载，没有退场状态可挂），
-     与展开播放器"有进无退"的处理保持一致。
-     ⚠️ 位移只能作用在**抽屉本体**上，不能给 .music-drawer-bd 也加同一套：
-       蒙层是整屏定位的，平移它会把整块遮罩一起横向拖动，露出下面的界面。
-       蒙层只做透明度淡入。 */
-  animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;
+.queue-drawer .ui-drawer-body {
+  padding: 0 12px 16px;
 }
-@keyframes music-drawer-in {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
-  }
+.qd-section {
+  margin-top: 8px;
 }
-.music-drawer-hd {
+/* 段眉标：8.5px / 大写间距 / faint —— 它是分隔符，不该和歌名抢视线 */
+.qd-caption {
+  padding: 7px 7px 4px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--miao-faint);
+}
+.qd-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--md-line);
-  flex: 0 0 auto;
-}
-.music-drawer-ic {
-  color: var(--md-pink);
-}
-.music-drawer-list {
-  flex: 1;
-  overflow: auto;
-  padding: 6px 0;
-}
-.music-qrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  height: 52px;
+  padding: 7px;
+  border-radius: 9px;
   cursor: pointer;
 }
-.music-qrow:hover {
-  background: var(--md-surface-2);
+.qd-row:hover {
+  background: var(--miao-surface-2);
 }
-.music-qrow.is-hot {
-  background: var(--md-pink-soft);
+.qd-row.is-current {
+  /* 设计稿 .qd-row.is-current 用 --primary-soft（雾蓝浅底），不是暖橙的 accent-soft */
+  background: var(--miao-primary-soft);
 }
-.music-qrow.is-hot .music-row-tx b {
-  color: var(--md-pink);
-  font-weight: 700;
-}
-.music-qrow-ix {
-  width: 26px;
+.qd-index {
+  width: 16px;
+  flex-shrink: 0;
   text-align: center;
   font-size: 10px;
-  color: var(--md-muted);
+  color: var(--miao-faint);
+  font-variant-numeric: tabular-nums;
+}
+.qd-row.is-current .qd-index {
+  color: var(--miao-primary-ink);
+}
+/* 行内封面：32×32 / r7（设计稿 `.qd-row .cover-art` 那一档） */
+.qd-cover {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  /* 设计稿 .cover-art 无描边：那 1px 会吃掉图片 2px，还与卡片边框抢视觉 */
+  border: 0;
+}
+.qd-row-meta {
+  min-width: 0;
+  flex: 1;
+}
+.qd-row-meta strong {
+  display: block;
+  font-size: 11px;
+  color: var(--miao-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-row-meta small {
+  display: block;
+  font-size: 10px;
+  color: var(--miao-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qd-time {
   flex-shrink: 0;
-  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  color: var(--miao-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+/* 移除键：平时透明，悬停整行才浮出（设计稿 `.qd-remove`）—— 队列行不该常驻一排删除键 */
+.qd-remove {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--miao-faint);
+  opacity: 0;
+  transition: opacity var(--miao-dur-fast) var(--miao-ease-out);
+}
+.qd-row:hover .qd-remove {
+  opacity: 1;
+}
+.qd-remove:hover {
+  background: var(--miao-danger-soft);
+  color: var(--miao-danger);
+}
+.qd-empty {
+  padding: 24px 10px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--miao-muted);
 }
 
 /* ---------------------------------------------------------------- 展开播放器 */
@@ -1537,7 +3362,8 @@
     animation-duration: 0.001s;
   }
   /* 队列抽屉同理：开了"减少动态效果"就不做横向位移，只做瞬时切换 */
-  .music-drawer {
+  .ui-drawer,
+  .ui-drawer-mask {
     animation-duration: 0.001s;
   }
 }
@@ -1545,7 +3371,56 @@
   position: absolute;
   top: 12px;
   left: 14px;
+  right: 14px;
   z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/*
+ * 头部中央（设计稿 `.xp-head-center`）：一行「正在播放」+ 专辑名。
+ * 绝对居中而不是跟着 flex 排 —— 左侧是收起按钮，让它参与排布会把这段文字推偏。
+ */
+.music-exp-topcenter {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
+}
+.music-exp-topcenter span {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.72);
+}
+.music-exp-topcenter small {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.5);
+}
+/* 浅色皮肤下翻回深色（与 .music-exp .ui-cbtn 的同一套开关） */
+.music-exp.is-light .music-exp-topcenter span {
+  color: color-mix(in srgb, var(--miao-ink) 72%, transparent);
+}
+.music-exp.is-light .music-exp-topcenter small {
+  color: color-mix(in srgb, var(--miao-ink) 50%, transparent);
+}
+/* 「译」开关：与 Tab 同一行右端，选中态用主色淡片 */
+.music-exp-ltabs .music-exp-trans {
+  margin-left: 6px;
+  align-self: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.music-exp-ltabs .music-exp-trans.is-on {
+  background: var(--miao-primary-soft);
+  border-color: var(--miao-primary-line);
+  color: var(--miao-primary-ink);
 }
 /* 深色皮肤下控制按钮取白色；浅色皮肤（.is-light）再翻回深色 */
 .music-exp .ui-cbtn {
@@ -1558,10 +3433,10 @@
   color: #fff;
 }
 .music-exp .ui-cbtn.main:hover {
-  background: var(--md-pink);
+  background: var(--miao-accent);
 }
 .music-exp.is-light .ui-cbtn {
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 .music-exp.is-light .ui-cbtn:hover {
   background: rgba(59, 51, 82, 0.1);
@@ -1663,6 +3538,19 @@
   min-width: 0;
   max-width: 100%;
 }
+/*
+ * 眉标（设计稿 `.xp-kicker`）：`TRACK 03 · 网易云音乐`，9.5px / 700 / .16em / uppercase。
+ * 选择器要比 `.music-exp-info span`（歌手行 12.5px）更具体，否则会被那一行吃掉字号。
+ */
+.music-exp-info .music-exp-kicker {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--skin-sub, rgba(255, 255, 255, 0.6));
+}
 .music-exp-info b {
   font-family: var(--md-font-display);
   font-size: 19px;
@@ -1679,7 +3567,7 @@
   margin-top: 3px;
 }
 .music-exp-info em {
-  font-size: 11.5px;
+  font-size: 12px;
   font-style: normal;
   color: var(--skin-sub, rgba(255, 255, 255, 0.55));
 }
@@ -1748,7 +3636,7 @@
 .music-exp-ltab {
   padding: 4px 13px;
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-family: var(--md-font-body);
   border: none;
   background: var(--skin-hover, rgba(255, 255, 255, 0.12));
@@ -1756,16 +3644,16 @@
   cursor: pointer;
 }
 .music-exp-ltab.is-on {
-  background: var(--md-pink);
+  background: var(--miao-accent);
   color: #fff;
   font-weight: 700;
 }
 .music-exp.is-light .music-exp-ltab {
   background: rgba(59, 51, 82, 0.08);
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 .music-exp.is-light .music-exp-ltab.is-on {
-  background: var(--md-pink);
+  background: var(--miao-accent);
   color: #fff;
 }
 
@@ -1798,7 +3686,7 @@
 }
 /* 歌词字号与高亮色走 CSS 变量（设置页「歌词」两项）：
    --lyr-size / --lyr-hl 由 ExpandedPlayer 以内联 style 注入。
-   回落到 `#ffe066`（= player-options 的 `LYRICS_COLOR_DEF`）而**不是** `var(--md-yellow)`——
+   回落到 `#8fb6d6`（= player-options 的 `LYRICS_COLOR_DEF`，天青）而**不是** `var(--md-yellow)`——
    后者在本项目里**只被引用、从未定义**（同 `--md-pink-soft` 等一批），拿它当回落值等于**没有回落**：
    变量缺失时整条 color 声明会失效，当前行就继承正文色，看起来正是"高亮没生效"。 */
 .music-lyr-line {
@@ -1807,13 +3695,24 @@
   text-align: center;
   /* 正文色由 --lyr-text 注入：现代/封面渐染跟随封面明暗、彩胶固定深灰，避免"亮底黑字看不清" */
   color: var(--lyr-text, #fff);
-  transition: all 0.2s;
+  /*
+   * 行级过渡**只允许 color / opacity**。
+   *
+   * 设计稿的歌词行本身没有行级过渡（只有逐字 `.ly-word { transition: color .12s linear }`）；
+   * 这里保留一条淡入淡出是有意的（换行时不要硬切），但旧写法 `transition: all 0.2s`
+   * 把 font-size（高亮时 +3px）与 font-weight 也纳入了过渡 —— 歌词是 `text-align: center`，
+   * 字号渐变时整行以中心为锚点向两端外扩，看起来就是"一行字在慢慢长大"（D-137 的根因之一）。
+   * 属性收敛之后，这个位移形态从源头消失，`.is-line-mode` 的 `transition: none` 只剩兜底作用。
+   */
+  transition:
+    color var(--miao-dur-fast) linear,
+    opacity var(--miao-dur-fast) linear;
 }
 .music-lyr-line.is-on {
   font-size: calc(var(--lyr-size, 16px) + 3px);
   font-weight: 700;
   opacity: 1;
-  color: var(--lyr-hl, #ffe066);
+  color: var(--lyr-hl, #8fb6d6);
 }
 /*
   整行模式（`.is-line-mode`，D-137）：**取消一切过渡**，唱到哪句哪句瞬间到位。
@@ -1827,7 +3726,7 @@
   transition: none;
 }
 /*
-  ⚠️ 这里原本有一条 `.music-exp.is-light .music-lyr-line { color: var(--md-ink); }`，**已删除**。
+  ⚠️ 这里原本有一条 `.music-exp.is-light .music-lyr-line { color: var(--miao-ink); }`，**已删除**。
   它有两个问题，任一都足以让「歌词高亮色」失效：
   ① **优先级反了**：3 个类（0,3,0）压过上面 `.music-lyr-line.is-on`（0,2,0），
      于是用户选的 `--lyr-hl` 在「通透 / 透明彩胶 / 封面渐染」三种浅色皮肤下**被覆盖成深色** ——
@@ -1866,7 +3765,7 @@
 }
 /* 底层：未唱部分。用高亮色压低透明度 —— 与顶层同色系，过渡时不会有色相跳变 */
 .kara-under {
-  color: var(--lyr-hl, #ffe066);
+  color: var(--lyr-hl, #8fb6d6);
   opacity: 0.32;
 }
 /* 顶层：已唱部分。width 由 RAF 逐帧写入；overflow:hidden 让 width 成为"裁切"。
@@ -1878,7 +3777,7 @@
   width: 0%;
   overflow: hidden;
   white-space: nowrap;
-  color: var(--lyr-hl, #ffe066);
+  color: var(--lyr-hl, #8fb6d6);
   will-change: width;
 }
 /* 当前行整行：nowrap 后超长部分会溢出，这里裁掉，避免撑出横向滚动条 */
@@ -1925,7 +3824,7 @@
   color: var(--skin-sub, rgba(255, 255, 255, 0.5));
 }
 .music-exp.is-light .ui-empty {
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 
 /* 评论列表 */
@@ -1939,15 +3838,15 @@
   padding: 4px;
 }
 .music-exp-cm-sec {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  color: var(--md-pink);
+  color: var(--miao-accent);
 }
 .music-exp-cm {
   display: flex;
   gap: 8px;
   padding: 7px;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.06);
 }
 .music-exp.is-light .music-exp-cm {
@@ -1961,21 +3860,21 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .music-exp-cm-hd b {
   font-size: 12px;
   color: var(--skin-text, #fff);
 }
 .music-exp.is-light .music-exp-cm-hd b {
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 .music-exp-cm-hd span {
   font-size: 10px;
   color: var(--skin-sub, rgba(255, 255, 255, 0.5));
 }
 .music-exp.is-light .music-exp-cm-hd span {
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .music-exp-cm-txt {
   font-size: 12px;
@@ -1983,7 +3882,7 @@
   color: var(--skin-text, rgba(255, 255, 255, 0.85));
 }
 .music-exp.is-light .music-exp-cm-txt {
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 
 .music-exp-bottom {
@@ -2028,7 +3927,7 @@
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border-radius: var(--md-radius-lg);
+  border-radius: var(--miao-r-lg);
   border: none;
   background: transparent;
   color: var(--skin-text, rgba(255, 255, 255, 0.92));
@@ -2040,7 +3939,7 @@
   background: var(--skin-hover, rgba(255, 255, 255, 0.16));
 }
 .music-exp.is-light .music-exp-stylebtn {
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 .music-exp.is-light .music-exp-stylebtn:hover {
   background: rgba(59, 51, 82, 0.1);
@@ -2051,15 +3950,16 @@
   top: -6px;
   right: -11px;
   z-index: 3;
-  background: #e53e3e;
+  background: var(--miao-danger);
   color: #fff;
-  font-size: 9px;
+  font-family: var(--md-font-display);
+  font-size: 10px;
   font-weight: 700;
   line-height: 1.4;
-  padding: 0 4px;
+  padding: 0 5px;
   border-radius: 999px;
   pointer-events: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 2px 6px -2px rgba(45, 59, 70, 0.45);
 }
 
 /* 动态开关：文字「动态」+ Switch（仅「现代」样式出现） */
@@ -2070,12 +3970,12 @@
   margin-left: 4px;
 }
 .music-exp-dyn > span {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.6);
 }
 .music-exp.is-light .music-exp-dyn > span {
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 
 /* 样式预览弹层：透明遮罩（点外部关闭）+ 深色毛玻璃卡片列。
@@ -2096,7 +3996,7 @@
   padding: 6px;
   background: rgba(18, 18, 26, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--md-radius-lg);
+  border-radius: var(--miao-r-lg);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -2113,19 +4013,19 @@
   width: 100%;
   padding: 3px;
   border: none;
-  border-radius: var(--md-radius-md);
+  border-radius: var(--miao-r-md);
   background: transparent;
   cursor: pointer;
   outline: 2px solid transparent;
   outline-offset: 1px;
-  transition: background 0.2s ease;
+  transition: background var(--miao-dur-fast) ease;
 }
 .music-style-card:hover {
   background: rgba(255, 255, 255, 0.14);
 }
 /* 当前项：描边走主题色（参考用 2px 主题色 outline） */
 .music-style-card.is-on {
-  outline-color: var(--md-pink);
+  outline-color: var(--miao-accent);
   background: rgba(255, 255, 255, 0.1);
 }
 .music-style-thumb {
@@ -2133,18 +4033,18 @@
   width: 100%;
   aspect-ratio: 16 / 10;
   object-fit: cover;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   pointer-events: none;
 }
 .music-style-lb {
   display: block;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   text-align: center;
   color: rgba(255, 255, 255, 0.7);
 }
 .music-style-card.is-on .music-style-lb {
-  color: var(--md-pink);
+  color: var(--miao-accent);
   font-weight: 700;
 }
 
@@ -2176,17 +4076,17 @@
   appearance: none;
   border-radius: 3px;
   /* 与播放条音量条同一套填充口径：高亮色已调节段 + 原轨道色未调节段 */
-  --fill-c: var(--md-pink);
+  --fill-c: var(--miao-accent);
   --track-c: rgba(255, 255, 255, 0.28);
   background: linear-gradient(to right, var(--fill-c) 0 var(--fill, 0%), var(--track-c) var(--fill, 0%) 100%);
   cursor: pointer;
   transition:
-    width 0.25s ease,
-    opacity 0.2s ease,
-    margin-left 0.25s ease;
+    width var(--miao-dur-base) var(--miao-ease-out),
+    opacity var(--miao-dur-fast) var(--miao-ease-out),
+    margin-left var(--miao-dur-base) var(--miao-ease-out);
 }
 .music-exp.is-light .music-exp-vol-slider {
-  --track-c: var(--md-line);
+  --track-c: var(--miao-line);
 }
 .music-exp-volwrap:hover .music-exp-vol-slider {
   width: 80px;
@@ -2198,7 +4098,7 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: var(--md-pink);
+  background: var(--miao-accent);
 }
 
 /* 右区：歌词色 / 字号 / 音质 / 桌面歌词 / 队列 */
@@ -2219,7 +4119,7 @@
   flex-shrink: 0;
 }
 .music-exp.is-light .music-exp-alf {
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .music-exp-size {
   width: 60px;
@@ -2238,7 +4138,7 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: var(--md-pink);
+  background: var(--miao-accent);
 }
 /* 展开播放器里的音质下拉：沿用播放条的胶囊外观，深色底上略放高一点 */
 .music-exp .music-q-sel {
@@ -2251,7 +4151,7 @@
   color: var(--skin-sub, rgba(255, 255, 255, 0.6));
 }
 .music-exp.is-light .music-prog-t {
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
 .music-exp .music-prog-bar {
   --track-c: rgba(255, 255, 255, 0.28);
@@ -2501,13 +4401,13 @@
   left: 50%;
   transform: translate(-50%, -50%);
   width: 248px;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
   padding: 16px 18px;
-  box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
+  box-shadow: var(--miao-shadow-2);
   z-index: 4;
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 .music-skin-hd {
   font-family: var(--md-font-display);
@@ -2521,77 +4421,278 @@
   gap: 10px;
 }
 .music-skin {
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-md);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-md);
   overflow: hidden;
-  background: var(--md-surface);
+  background: var(--miao-surface);
   padding: 0;
   cursor: pointer;
 }
 .music-skin.is-on {
-  border-color: var(--md-pink);
-  box-shadow: 0 0 0 2px var(--md-pink-soft);
+  border-color: var(--miao-accent);
+  box-shadow: 0 0 0 2px var(--miao-primary-soft);
 }
 .music-skin-thumb {
   height: 48px;
   display: block;
 }
 .music-skin-lb {
-  font-size: 10.5px;
+  font-size: 11px;
   text-align: center;
   padding: 5px 3px;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   border-top: 1px solid var(--md-line-soft);
   display: block;
 }
 .music-skin.is-on .music-skin-lb {
-  color: var(--md-pink);
+  color: var(--miao-accent);
   font-weight: 700;
 }
 
 /* ---------------------------------------------------------------- 登录弹窗 */
-.music-login-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(30, 24, 52, 0.45);
+/* 登录弹窗 = 通用 `Modal` 单元 + 设计稿那两个特性修饰类（`.login-card` / `.login-body`）：
+   蒙层模糊、阴影、弹簧进场、四段结构全部由单元提供，这里只写这个弹窗自己的尺寸与两栏 */
+.login-card {
+  width: min(650px, 100%);
+}
+.login-body {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  min-height: 300px;
+  padding: 14px 20px 18px;
+  gap: 14px;
+  overflow: auto;
+  min-height: 0;
+}
+.login-platforms {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 10px;
+  border-right: 1px solid var(--miao-line);
+}
+/* 设计稿 `.login-foot`：整行居中、9.5px muted、锁形图标 12px */
+.login-card .modal-foot {
+  justify-content: center;
+  gap: 6px;
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.login-platform {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease;
+}
+.login-platform:hover {
+  background: var(--miao-surface-2);
+}
+.login-platform.is-active {
+  background: var(--miao-surface-2);
+  border-color: var(--miao-line);
+}
+.login-platform-tx {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.login-platform-tx strong {
+  font-family: var(--md-font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.login-platform-tx small {
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.login-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.login-panel-head h3 {
+  font-family: var(--md-font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.login-panel-head p {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--miao-muted);
+}
+/* 未登录：官方窗口提示块 */
+.login-wait {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface-2);
+}
+.login-wait > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--miao-accent);
+}
+.login-wait-tx h4 {
+  font-family: var(--md-font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.login-wait-tx p {
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--miao-muted);
+}
+.login-status {
+  font-size: 10px;
+  color: var(--miao-accent-ink);
+}
+/* 已登录：账号卡 */
+.login-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface-2);
+}
+/* 账号卡头像（设计稿 `.login-account .avatar-lg`）：44 圆、平台色底（`--pc` 注入）、
+   没有平台色时回落到品牌的斜向渐变 */
+.avatar-lg {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--pc, linear-gradient(135deg, var(--miao-accent), var(--miao-primary)));
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+.login-account > div {
+  flex: 1;
+  min-width: 0;
+}
+.login-account h4 {
+  font-family: var(--md-font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.login-account p {
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+/* 平台色圆标（设计稿 `.provider-orb`）：`--pc` 由调用方注入；缺省回落主色。
+   四个平台的列表行只差一个字，颜色比字形更快被认出来 */
+.provider-orb {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 80;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--pc, var(--miao-primary));
+  color: #fff;
+  font-family: var(--md-font-display);
+  font-size: 10px;
+  font-weight: 700;
 }
-.music-login {
-  width: 100%;
-  max-width: 340px;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
-  padding: 16px 18px;
-  box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.music-login-hd {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.music-login-body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 0 4px;
-}
-.music-login-note {
+/* 面板头里那一枚大一档（设计稿同规则） */
+.login-panel-head .provider-orb {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   font-size: 12px;
-  color: var(--md-ink-2);
-  text-align: center;
-  line-height: 1.6;
+}
+/*
+ * 设置页 ③ 的平台账号卡（设计稿 `.account-grid` / `.account-card`）：两列四格，
+ * 每格「圆标 + 平台名与状态 + 一个动作」。动作压到 24 高、9px ——
+ * 这张卡是来**读状态**的，按钮不能比状态本身更抢眼。
+ */
+.account-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.account-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px;
+  border-radius: 10px;
+  background: var(--miao-surface-2);
+  border: 1px solid var(--miao-line);
+}
+/* 卡里的圆标比弹窗列表里那枚略大、字略小（设计稿同一条覆盖规则） */
+.account-card .provider-orb {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+.account-card-tx {
+  min-width: 0;
+  flex: 1;
+}
+.account-card-tx strong {
+  display: block;
+  font-size: 10px;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.account-card-tx small {
+  display: block;
+  font-size: 8.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.account-card .btn {
+  height: 24px;
+  padding: 0 7px;
+  font-size: 10px;
+}
+/* 设计稿 `.login-note`：组件一直在用这个类，样式此前是缺的（于是这句提示按正文渲染） */
+.login-note {
+  margin-top: 12px;
+  font-size: 9.5px;
+  line-height: 1.7;
+  color: var(--miao-faint);
 }
 .music-login-spin {
-  color: var(--md-pink);
+  color: var(--miao-accent);
   animation: music-spin 0.9s linear infinite;
 }
 @keyframes music-spin {
@@ -2599,60 +4700,13 @@
     transform: rotate(360deg);
   }
 }
-.music-login-status {
-  font-size: 12px;
-  color: var(--md-ink-2);
-  min-height: 18px;
-  text-align: center;
-}
-.music-login .music-btn {
-  align-self: center;
-}
 
 /* ---------------------------------------------------------------- 桌面歌词设置弹窗 */
 /* 与登录弹窗同一套遮罩/卡片观感，但独立成类：两者的内容与后续演化无关，混用会在改一处时波及另一处。
    z-index 取 80（与登录遮罩同级、高于展开播放器 70 与 Select 弹层 75）——它是从播放条唤起的浮层。 */
-.music-dlset-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(30, 24, 52, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 80;
-}
-.music-dlset {
-  width: 100%;
-  max-width: 360px;
-  /* 内容比窗口高时只让 body 滚，头部标题与底部动作始终留在视野里 */
-  max-height: 82vh;
-  overflow: hidden;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
-  padding: 16px 18px;
-  box-shadow: 0 20px 50px rgba(70, 60, 120, 0.22);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.music-dlset-hd {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.music-dlset-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--md-font-display);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--md-ink);
-}
-/* 弹窗主体：可滚动（设置项比窗口高时）。min-height:0 是 flex 子项能滚的必要条件 ——
-   少了它，子项的最小高度默认是内容高度，滚动条永远不会出现。 */
+/* 桌面歌词设置 = 通用 `Modal` 单元（蒙层 / 阴影 / 弹簧进场 / 四段结构都由它提供），
+   这里只剩这个弹窗自己的设置行。原先那套 `music-dlset-overlay/-hd/-kicker/-title/-sub/-ft`
+   是同一张卡片的手写复制品 —— 宽度、圆角、阴影各差一档，且蒙层没有模糊。 */
 .music-dlset-body {
   padding: 2px 0;
   display: flex;
@@ -2661,19 +4715,6 @@
   overflow-y: auto;
   min-height: 0;
   flex: 1 1 auto;
-}
-
-/* 开篇一句：这批设置作用于"哪一个窗口"必须先说清。
-   设置页里也有同名项（歌词字号 / 歌词高亮色），不点明作用对象的话用户一定以为改的是同一个。 */
-.music-dlset-lead {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--md-ink-2);
-}
-.music-dlset-lead b {
-  color: var(--md-ink);
-  font-weight: 700;
 }
 
 /* 即时小样：用控件正在编辑的同一份值渲染。
@@ -2685,7 +4726,7 @@
   align-items: center;
   gap: 2px;
   padding: 10px 12px;
-  border-radius: var(--md-radius-sm);
+  border-radius: 12px;
   background: linear-gradient(180deg, rgba(38, 33, 64, 0.92), rgba(20, 15, 41, 0.9));
   overflow: hidden;
 }
@@ -2707,7 +4748,7 @@
 .music-dlset-label {
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--md-ink);
+  color: var(--miao-ink);
 }
 .music-dlset-ctl {
   display: flex;
@@ -2720,81 +4761,57 @@
   flex: 1 1 140px;
 }
 .music-dlset-hint {
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.55;
-  color: var(--md-ink-2);
+  color: var(--miao-text);
 }
 .music-dlset-hint b {
-  color: var(--md-ink-2);
+  color: var(--miao-text);
   font-weight: 700;
 }
 
-/* 行数选择：一排小方块（2 / 3 / 4 / 5）。
-   没做成下拉是因为候选只有 4 个且都要一眼看到 —— 下拉会把它藏起来。 */
-.music-dlset-seg {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.music-dlset-segbtn {
-  min-width: 30px;
-  height: 24px;
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-xs);
-  background: var(--md-surface);
-  color: var(--md-ink-2);
-  font-size: 12px;
-  font-weight: 500;
-  transition:
-    background 0.15s,
-    border-color 0.15s,
-    color 0.15s;
-}
-.music-dlset-segbtn:hover {
-  border-color: var(--md-pink);
-  color: var(--md-ink);
-}
-.music-dlset-segbtn.is-on {
-  border-color: var(--md-pink);
-  background: var(--md-pink-soft);
-  color: var(--md-ink);
-  font-weight: 700;
-}
+/* 行数选择那一排曾经在这里自造过一套小方块样式（`.music-dlset-seg*`）。
+   它与设计稿的 `.seg` 不是一种控件（描边小方片 vs 内凹轨道 + 浮起选中项），
+   且同一个形态在设置页又要再写一遍 —— 已收进通用单元 `Segmented`（样式见
+   `components.scss` 的 `.ui-seg`），此处只留一条去向说明，不放第二套外观。 */
 
-/* 底部动作条：左「恢复默认」右「完成」，与头部关闭按钮一起构成三条关闭路径
-   （Esc / 点遮罩 / 右上角 X），这里再加一条最符合直觉的「完成」。 */
-.music-dlset-ft {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
 /* 收尾说明：改动何时可见 */
 .music-dlset-note {
-  font-size: 11.5px;
-  color: var(--md-ink-2);
+  font-size: 12px;
+  color: var(--miao-text);
   text-align: center;
   line-height: 1.6;
 }
 
-/* ---------------------------------------------------------------- 轻提示 */
+/* ---------------------------------------------------------------- 轻提示
+ * 走**浮层卡片**：表面色底 + 语义色左缘，与右上角通知堆叠同一套语汇（半透明 + 模糊 +
+ * 弥散阴影）。原先整条填充饱和语义色 —— 浅色主题下与页面形成硬边，白字压在浅黄上
+ * 对比度也不足。
+ */
 .music-toast {
   position: fixed;
   left: 50%;
   bottom: 96px;
   transform: translateX(-50%);
-  z-index: 90;
+  /* 与全局通知同层（设计稿 `--z-toast: 120`）：两条 toast 通道要么都在最上面，要么都会漏看 */
+  z-index: 120;
   max-width: 440px;
-  padding: 9px 16px;
-  border-radius: 999px;
+  padding: 10px 16px;
+  border: 1px solid var(--miao-line);
+  border-left: 3px solid var(--miao-primary);
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--miao-surface) 94%, transparent);
+  color: var(--miao-text);
   font-size: 12px;
-  color: #fff;
-  box-shadow: 0 12px 30px rgba(70, 60, 120, 0.25);
+  line-height: 1.6;
+  box-shadow: var(--miao-shadow-2);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: miao-toast-in var(--miao-dur-base) var(--miao-ease-spring);
 }
 .music-toast.is-warning {
-  background: var(--md-warning);
+  border-left-color: var(--miao-warning);
 }
 .music-toast.is-success {
-  background: var(--md-success);
-  color: var(--md-on-accent);
+  border-left-color: var(--miao-success);
 }

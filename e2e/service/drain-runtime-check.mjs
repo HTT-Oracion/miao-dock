@@ -239,8 +239,8 @@ async function main() {
     service = spawnProc(
       SERVICE_ENTRY,
       {
-        MIAO_ROOT: path.join(TMP, 'root'),
-        MIAO_STATE_DIR: path.join(TMP, 'state'),
+        MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root'),
+        MIAO_MANGA_STATE_DIR: path.join(TMP, 'state'),
         MIAO_TOKEN: TOKEN,
         MIAO_ENGINE_PORT: String(eng.port),
         // 🔴 反证钩子：把整段 drain 压回一把锁（D-150 的旧形态）。

@@ -71,6 +71,26 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
 
   const tokens = mode === 'dark' ? COLOR_TOKENS_DARK : COLOR_TOKENS_LIGHT;
 
+  /*
+   * 响应式期望值 —— 与 app.scss / components.scss 的断点同源。
+   * 断点：1180 收内容边距与设置左栏，1040 收侧栏为纯图标轨，760 收成窄轨。
+   * 自检在用户的真实窗口里跑，所以期望值必须随视口变化，不能写死桌面档。
+   */
+  const vw = window.innerWidth;
+  const isNarrow = vw <= 760;
+  const isCompact = vw <= 1040;
+  const isMedium = vw <= 1180;
+  const wantSidebarWidth = isNarrow
+    ? SHELL.narrowSidebarWidth
+    : isCompact
+      ? SHELL.compactSidebarWidth
+      : SHELL.sidebarWidth;
+  const wantContentPad = isNarrow
+    ? SHELL.narrowContentPadding
+    : isMedium
+      ? SHELL.compactContentPadding
+      : SHELL.contentPadding;
+
   // ---------------------------------------------------------------- C1 外壳几何
   {
     const sidebar = document.querySelector('.sidebar') as HTMLElement | null;
@@ -83,12 +103,12 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     const pad = cs
       ? [px(cs.paddingTop), px(cs.paddingRight), px(cs.paddingBottom), px(cs.paddingLeft)]
       : [-1, -1, -1, -1];
-    const want = SHELL.contentPadding;
+    const want = wantContentPad;
 
     add(
       'C1',
-      '外壳几何：侧栏 78 / 工具条 62 / 应用区内边距 26·26·22·24',
-      near(sw, SHELL.sidebarWidth) &&
+      `外壳几何（${vw}px 档）：侧栏 ${wantSidebarWidth} / 工具条 ${SHELL.toolbarHeight} / 应用区内边距 ${want.top}·${want.right}·${want.bottom}·${want.left}`,
+      near(sw, wantSidebarWidth) &&
         near(th, SHELL.toolbarHeight) &&
         near(pad[0], want.top) &&
         near(pad[1], want.right) &&
@@ -180,9 +200,9 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     const pc = primary ? getComputedStyle(primary) : null;
     add(
       'C3d',
-      '「重试」等主推进动作用 pink',
-      !!pc && sameColor(toHex(pc.backgroundColor), tokens.pink),
-      pc ? `实际 ${toHex(pc.backgroundColor)} / 期望 ${tokens.pink}` : '未渲染',
+      '「重试」等主推进动作用模块主色（雾蓝）',
+      !!pc && sameColor(toHex(pc.backgroundColor), tokens.blue),
+      pc ? `实际 ${toHex(pc.backgroundColor)} / 期望 ${tokens.blue}` : '未渲染',
     );
   }
 
@@ -232,19 +252,23 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
   // ---------------------------------------------------------------- C5 漫画库几何
   {
     const left = q<HTMLElement>(root, '.lib-left');
-    const card = q<HTMLElement>(root, '.grid-card');
+    /*
+     * 页卡已按设计稿改成 `.page-card`：宽度交给网格、缩略图按 3/4.16 自适应，
+     * 不再有固定的 110x165。判据随之改为量**页卡自身**的圆角与宽高比 ——
+     * 继续钉 `.grid-card` 会一直量一个已不存在的元素（等于空断言）。
+     */
+    const card = q<HTMLElement>(root, '.page-card');
     const lw = left ? left.getBoundingClientRect().width : -1;
-    const cw = card ? card.getBoundingClientRect().width : -1;
-    const ch = card ? card.getBoundingClientRect().height : -1;
+    const thumb = card ? (card.querySelector('.page-thumb') as HTMLElement | null) : null;
+    const cw = thumb ? thumb.getBoundingClientRect().width : -1;
+    const ch = thumb ? thumb.getBoundingClientRect().height : -1;
     const cr = card ? px(getComputedStyle(card).borderTopLeftRadius) : -1;
     add(
       'C5',
-      `漫画库：左栏 ${LIBRARY.leftColumnWidth}；网格卡 ${LIBRARY.card.w}×${LIBRARY.card.h} r${LIBRARY.card.radius}`,
-      near(lw, LIBRARY.leftColumnWidth) &&
-        near(cw, LIBRARY.card.w) &&
-        near(ch, LIBRARY.card.h) &&
-        near(cr, LIBRARY.card.radius),
-      `左栏 ${lw.toFixed(0)} / 卡 ${cw.toFixed(0)}×${ch.toFixed(0)} r${cr}`,
+      `漫画库：左栏 ${LIBRARY.leftColumnWidth}；页卡 r12 / 缩略区 3:4.16`,
+      // 🔴 页卡圆角 2026-10-26 按设计稿 `theme.css` 的 `.page-card { border-radius: 12px }` 由 8 改 12
+      near(lw, LIBRARY.leftColumnWidth) && near(cr, 12) && cw > 0 && Math.abs(ch / cw - 4.16 / 3) < 0.08,
+      `左栏 ${lw.toFixed(0)} / 缩略区 ${cw.toFixed(0)}×${ch.toFixed(0)} r${cr}`,
     );
   }
 
@@ -266,8 +290,8 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     add(
       'C6b',
       '换主题只改变量、不改变结构（几何与主题无关）',
-      !!sidebar && near(sidebar.getBoundingClientRect().width, SHELL.sidebarWidth),
-      `侧栏 ${sidebar ? sidebar.getBoundingClientRect().width.toFixed(0) : '-'}`,
+      !!sidebar && near(sidebar.getBoundingClientRect().width, wantSidebarWidth),
+      `侧栏 ${sidebar ? sidebar.getBoundingClientRect().width.toFixed(0) : '-'}（该档期望 ${wantSidebarWidth}）`,
     );
   }
 
@@ -282,21 +306,24 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
     const fam = (e: Element | null) => (e ? getComputedStyle(e).fontFamily : '');
     add(
       'C7a',
-      '数字走 Inter Medium / 标题走 Zen Maru Gothic / 正文走 Noto Sans SC',
-      fam(numEl).includes('Inter') &&
+      '数字与标题走狮尾圆体 / 正文走悠哉字体',
+      fam(numEl).includes('Swei Gothic CJK SC') &&
         !!titleEl &&
-        fam(titleEl).includes('Zen Maru Gothic') &&
-        fam(bodyEl).includes('Noto Sans SC'),
+        fam(titleEl).includes('Swei Gothic CJK SC') &&
+        fam(bodyEl).includes('Yozai'),
       `数字 ${fam(numEl).split(',')[0]} / 标题 ${fam(titleEl).split(',')[0]} / 正文 ${fam(bodyEl).split(',')[0]}`,
     );
 
-    const loaded = ['"Inter"', '"Zen Maru Gothic"', '"Noto Sans SC"'].map((f) => ({
-      f,
-      ok: typeof document.fonts?.check === 'function' ? document.fonts.check(`12px ${f}`) : false,
+    const loaded = [
+      { f: '"Swei Gothic CJK SC"', weight: '700', ok: false },
+      { f: '"Yozai"', weight: '400', ok: false },
+    ].map((x) => ({
+      ...x,
+      ok: typeof document.fonts?.check === 'function' ? document.fonts.check(`${x.weight} 12px ${x.f}`) : false,
     }));
     add(
       'C7b',
-      '三款字体已随应用分发且加载成功（不是回落到系统字体）',
+      '狮尾圆体与悠哉字体已随应用分发且加载成功（不是回落到系统字体）',
       loaded.every((x) => x.ok),
       loaded.map((x) => `${x.f.replace(/"/g, '')} ${x.ok ? '✓' : '✗'}`).join(' · '),
     );
@@ -332,7 +359,8 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
       body ? (shown.includes(want) ? '逐字命中' : `实际：${shown.slice(0, 60)}…`) : '未渲染',
     );
 
-    const actions = Array.from(root.querySelectorAll('.modal-actions .btn'));
+    // 动作区在 `modal-foot`（设计稿四段结构）；`.modal-actions` 是旧写法，留作回落
+    const actions = Array.from(root.querySelectorAll('.modal-foot .btn, .modal-actions .btn')) as HTMLElement[];
     const labels = actions.map((b) => (b.textContent ?? '').trim());
     add(
       'B3b',
@@ -341,7 +369,9 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
       labels.join(' / ') || '未渲染',
     );
 
-    const danger = q<HTMLElement>(root, '.modal-actions .btn-danger');
+    // 动作区在 `modal-foot`（设计稿四段结构）；`.modal-actions` 是旧写法，留作回落
+    const danger =
+      q<HTMLElement>(root, '.modal-foot .btn-danger') ?? q<HTMLElement>(root, '.modal-actions .btn-danger');
     const dc = danger ? getComputedStyle(danger) : null;
     add(
       'B3c',
@@ -397,6 +427,10 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
      * 换成可访问名称后，两种形态下判据都成立，口径也与读屏一致。
      */
     const names = appItems.map((e) => (e.getAttribute('aria-label') ?? e.getAttribute('title') ?? '').trim());
+    /*
+     * ⚠️ 2026-10-30：番剧入口暂时隐藏（`Sidebar.tsx` 的 `SHOW_ANIME_ENTRY`），应用层回到 2 项。
+     * 这条判据**恒与真实入口数同值** —— 恢复番剧入口时必须同步改回 3，否则自检会红。
+     */
     add(
       'C8a',
       '侧栏应用层恒为 2 项且顺序为「漫画翻译 → 音乐」（按可访问名称判，与是否显示文字无关）',
@@ -451,7 +485,11 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
      */
     const geoms = appItems.map((e) => {
       const r = e.getBoundingClientRect();
-      const hasText = (e.querySelector('span')?.textContent ?? '').trim().length > 0;
+      // 可见性取 computed style：响应式断点会把标签 `display:none`，但文字节点还在 DOM 里。
+      // 只读 textContent 会把「窄屏纯图标轨」误判成「图标+文字却用了 44×44」。
+      const label = e.querySelector('span');
+      const hasText =
+        !!label && getComputedStyle(label).display !== 'none' && (label.textContent ?? '').trim().length > 0;
       const want = hasText ? SIDEBAR.appItem : SIDEBAR.iconOnlyItem;
       return {
         hasText,
@@ -486,10 +524,16 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
   // ⚠️ 刻意**校验顺序**而非只校验存在 —— 文档明写「顺序错即红，不只查存在」。
   // 上一轮就有个反面教训：断言只查"存在"时，把三个 Tab 排成任何顺序都全绿。
   {
-    // Tab 行仅在翻译应用内渲染。故先确认它此刻在 DOM 里；不在就跳过而不是判红 ——
-    // 「当前没进翻译应用」不是「Tab 顺序错了」，混为一谈会让断言变成噪声。
-    const tabs = Array.from(document.querySelectorAll('.viewtabs .viewtab'));
-    if (tabs.length === 0) {
+    /*
+     * 🔴 2026-10-26：页签改成通用单元 `.ui-vtab`（漫画/音乐共用）。
+     *    原来这里选的是 `.viewtabs .viewtab` —— 改名后**一个都选不到**，
+     *    于是 `tabs.length === 0` 走"跳过"分支、判绿：C9 从那一刻起就没在检查任何东西。
+     *    现在按**容器**判断"是否在翻译应用内"，按**页签**判断顺序：
+     *    · 容器 `.ui-vtabs` 不在 ⇒ 确实没进翻译应用，跳过（不是失败）；
+     *    · 容器在但页签一个都没有 ⇒ 渲染坏了，**判红**（不能拿"跳过"当通过）。
+     */
+    const bar = document.querySelector('.ui-vtabs');
+    if (!bar) {
       add(
         'C9',
         '视图 Tab 顺序恒为「投放 → 队列 → 漫画库」',
@@ -497,6 +541,7 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
         '当前不在翻译应用内，Tab 未渲染（跳过，非通过依据）',
       );
     } else {
+      const tabs = Array.from(bar.querySelectorAll('.ui-vtab'));
       const texts = tabs.map((e) => (e.textContent ?? '').trim());
       const want = TRANSLATE_VIEWS.map((v) => v.label);
       const orderOk = texts.length === want.length && texts.every((t, i) => t === want[i]);
@@ -512,35 +557,47 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
   // ---------------------------------------------------------------- C10 设置两栏壳
   {
     // 量的是**真实渲染的两栏**，不是常量。离屏样张已被移出壳外（否则它 0 宽的
-    // flex item 会被 26px gap 推开左栏，让 180 假性不成立），故壳内只有 nav + main。
-    const shell = document.querySelector('.settings') as HTMLElement | null;
+    // flex item 会被推开左栏，让定宽判据假性不成立），故壳内只有 nav + main。
+    //
+    // 设计稿容器是 `.settings-layout`（grid 两列），左栏是**分区栏**（右分隔线，非卡片）。
+    const shell = document.querySelector('.settings-layout') as HTMLElement | null;
     const nav = shell?.querySelector('.settings-nav') as HTMLElement | null;
     const main = shell?.querySelector('.settings-main') as HTMLElement | null;
 
     if (!shell || !nav || !main) {
-      add('C10a', '设置页为两栏壳（左 180px sticky + 右 flex:1）', true, '当前不在设置页（跳过，非通过依据）');
+      add('C10a', '设置页为两栏壳（左 192px + 右自适应）', true, '当前不在设置页（跳过，非通过依据）');
     } else {
       const navW = nav.getBoundingClientRect().width;
+      const shellW = shell.getBoundingClientRect().width;
+      const mainW = main.getBoundingClientRect().width;
       const ncs = getComputedStyle(nav);
       const mcs = getComputedStyle(main);
+      const scs = getComputedStyle(shell);
       const shellKids = Array.from(shell.children);
+      /*
+       * 1040 以下壳改为上下布局：分组导航横排、占满壳宽，右栏同宽。
+       * 这一档不再要求定宽 —— 响应式本身就是「结构随宽度变」，
+       * 但「左右两栏在同宽约束下都不溢出」仍然要成立。
+       */
+      const stacked = isCompact;
+      const wantNavW = isMedium ? SETTINGS.navWidthCompact : SETTINGS.navWidth;
+      const layoutOk = stacked
+        ? near(navW, shellW) && near(mainW, shellW)
+        : near(navW, wantNavW) && scs.display === 'grid';
       add(
         'C10a',
-        `两栏壳：左栏 ${SETTINGS.navWidth}px（flex:0 0 ${SETTINGS.navWidth}、sticky top ${SETTINGS.navStickyTop}）+ 右栏 flex:1/min-width:0`,
-        near(navW, SETTINGS.navWidth) &&
-          ncs.flexBasis.startsWith('0 0') &&
-          ncs.position === 'sticky' &&
-          near(px(ncs.top), SETTINGS.navStickyTop) &&
-          (mcs.flexGrow === '1' || mcs.flexBasis === '0%' || mcs.flexBasis === 'auto') &&
-          mcs.minWidth === '0px',
-        `左栏 ${navW.toFixed(0)} / flexBasis ${ncs.flexBasis} / ${ncs.position} top ${ncs.top} · 右栏 flex ${mcs.flex} minWidth ${mcs.minWidth}`,
+        stacked
+          ? '设置页窄屏形态：分组导航横排、左右同宽不溢出（单列壳）'
+          : `两栏壳：左栏 ${wantNavW}px（grid 定列）+ 右栏自适应/min-width:0`,
+        layoutOk && mcs.minWidth === '0px',
+        `左栏 ${navW.toFixed(0)} / 右栏 ${mainW.toFixed(0)} / 壳 ${shellW.toFixed(0)} / 壳 ${scs.display} / ${ncs.position} · 右栏 minWidth ${mcs.minWidth}`,
       );
 
       // 一次只渲染一个分组。用「壳内除 nav/main 外无第三个结构子元素」+ 「右栏只挂载一组」判断。
       const renderedSections = shellKids.filter(
         (k) => !k.classList.contains('settings-nav') && !k.classList.contains('settings-main'),
       );
-      const headings = main.querySelectorAll('.settings-head').length;
+      const headings = main.querySelectorAll('.settings-section-head').length;
       add(
         'C10b',
         '一次只渲染**一个**分组（右栏单组，不把 5 组全渲染再靠 CSS 隐藏）',
@@ -551,8 +608,8 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
       const navItems = nav.querySelectorAll('.set-nav-item');
       add(
         'C10c',
-        '分组恒为 5 项（①通用 ②翻译服务 ③播放·媒体 ④资源与投放 ⑤关于）',
-        navItems.length === 5,
+        '分组恒为 6 项（①通用 ②翻译服务 ③播放·媒体 ④资源与投放 ⑤关于 ⑥番剧设置）',
+        navItems.length === 6,
         `左栏 ${navItems.length} 项：${
           Array.from(navItems)
             .map((e) => (e.querySelector('.set-nav-label')?.textContent ?? '').trim())
@@ -591,6 +648,83 @@ export function runSpecCheck(root: HTMLElement, mode: ThemeMode): SpecResult[] {
         texts.length === 4 && texts.every((t, i) => t === want[i]),
         `实际 ${texts.length} 个小节：${texts.join(' / ') || '无'}`,
       );
+    }
+  }
+
+  // ---------------------------------------------------------------- C12 行控件几何
+  //
+  // 设计稿右列那一排控件**各有各的尺寸**（下拉 186×32、小按钮 28、只读值 28、开关 38×22），
+  // 把它们"顺手统一成同一高度"是最常见的一种换皮。这条量的就是渲染值，
+  // 期望表在 `themes/tokens.ts` 的 `SETTINGS.ctl*`（每条都注明了设计稿原选择器）。
+  {
+    const box = q<HTMLElement>(root, '.set-row-ctl');
+    if (!box) {
+      add(
+        'C12',
+        '行控件几何与设计稿逐值一致（下拉 / 小按钮 / 只读值 / 开关）',
+        false,
+        '样张里找不到 .set-row-ctl —— 样张与判据脱节，这条会变成永远不跑的僵尸',
+      );
+    } else {
+      const sel = q<HTMLElement>(box, '.ui-select');
+      const btn = q<HTMLElement>(box, '.btn-sm');
+      const ro = q<HTMLElement>(box, '.set-ro');
+      const sw = q<HTMLElement>(box, '.switch');
+      const knob = q<HTMLElement>(box, '.switch-track > i');
+      const num = (el: HTMLElement | null) => (el ? el.getBoundingClientRect() : null);
+      const sty = (el: HTMLElement | null) => (el ? getComputedStyle(el) : null);
+      const selR = num(sel);
+      const btnR = num(btn);
+      const btnS = sty(btn);
+      const roR = num(ro);
+      const roS = sty(ro);
+      const swR = num(sw);
+      // 🔴 圆点量**计算值**而不是 `getBoundingClientRect()`：is-on 的圆点带 `transform:
+      // translateX(16px)` 且挂着弹簧过渡，首帧量到的盒可能还在过渡中途 —— 那条判据会变成
+      // "第一次跑红、第二次绿"，而自检里出现假红比没有这条判据更糟（用户从此不信它）。
+      const knobS = sty(knob);
+      const knobW = knobS ? px(knobS.width) : -1;
+      const knobH = knobS ? px(knobS.height) : -1;
+      // **只有"量到了 0"才跳过**（样张比判据慢一步，还没布局完）—— 那不是规格偏离。
+      // 元素**缺失**照红：样张是我们自己维护的，掉了就说明判据在量一个不存在的东西。
+      const notReady = !!selR && selR.width === 0 && !!swR && swR.width === 0;
+      if (notReady) {
+        add(
+          'C12',
+          `行控件几何逐值一致（下拉 ${SETTINGS.ctlSelectWidth}×${SETTINGS.ctlSelectHeight} / 小按钮 / 只读值 / 开关）`,
+          true,
+          '样张尚未完成布局（跳过，非通过依据）—— 再点一次运行自检即可',
+        );
+      } else {
+        /*
+         * 这条**只量几何**（盒宽高是 used value，稳）。
+         * 刻意不比字号：字号走 `calc(Npx * var(--ui-scale))`（构建期注入，见 D-347），
+         * 实测新页面第一次自检时它会有一瞬取不到变量（回落到继承的 13.5px），
+         * 判据就变成「第一次跑红、第二次绿」—— 会假红的断言比没有更坏，它教会用户不信自检。
+         * 字号阶梯本来就由 C2/C7 那批排版判据覆盖，它们量的是同一批样张的稳定面。
+         */
+        const okSel = near(selR!.width, SETTINGS.ctlSelectWidth) && near(selR!.height, SETTINGS.ctlSelectHeight);
+        const okBtn =
+          near(btnR!.height, SETTINGS.ctlBtnSmHeight) && !!btnS && near(px(btnS.borderRadius), SETTINGS.ctlBtnSmRadius);
+        const okRo =
+          near(roR!.height, SETTINGS.ctlRoHeight) && !!roS && near(px(roS.borderRadius), SETTINGS.ctlRoRadius);
+        const okSw =
+          near(swR!.width, SETTINGS.ctlSwitchWidth) &&
+          near(swR!.height, SETTINGS.ctlSwitchHeight) &&
+          near(knobW, SETTINGS.ctlSwitchKnob) &&
+          near(knobH, SETTINGS.ctlSwitchKnob);
+        add(
+          'C12',
+          `行控件几何逐值一致（下拉 ${SETTINGS.ctlSelectWidth}×${SETTINGS.ctlSelectHeight} / 小按钮 ${SETTINGS.ctlBtnSmHeight}·r${SETTINGS.ctlBtnSmRadius} / 只读 ${SETTINGS.ctlRoHeight}·r${SETTINGS.ctlRoRadius} / 开关 ${SETTINGS.ctlSwitchWidth}×${SETTINGS.ctlSwitchHeight}·圆点 ${SETTINGS.ctlSwitchKnob}）`,
+          okSel && okBtn && okRo && okSw,
+          [
+            `下拉 ${selR ? `${selR.width.toFixed(0)}×${selR.height.toFixed(0)}` : '缺'}${okSel ? '' : ' ← 与 .s-row-control .select 不符'}`,
+            `小按钮 ${btnR ? `${btnR.height.toFixed(0)}/r${btnS ? px(btnS.borderRadius) : '?'}` : '缺'}${okBtn ? '' : ' ← 与 .btn-sm 不符'}`,
+            `只读值 ${roR ? `${roR.height.toFixed(0)}/r${roS ? px(roS.borderRadius) : '?'}` : '缺'}${okRo ? '' : ' ← 与 .readonly 不符'}`,
+            `开关 ${swR ? `${swR.width.toFixed(0)}×${swR.height.toFixed(0)}` : '缺'} · 圆点 ${knobW > 0 ? `${knobW.toFixed(0)}×${knobH.toFixed(0)}` : '缺'}${okSw ? '' : ' ← 与 .switch-track/.switch-dot 不符'}`,
+          ].join(' / '),
+        );
+      }
     }
   }
 

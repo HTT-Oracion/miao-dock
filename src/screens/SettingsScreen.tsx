@@ -1,13 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Search, X } from 'lucide-react';
+import { Btn } from '@components/units';
 import type { ServiceStatus } from '@/ipc';
 import type { LibraryResponse } from '@/types';
 import type { ThemeMode } from '@/themes/tokens';
 import { SETTINGS } from '@/themes/tokens';
-import { SETTINGS_SECTIONS, parseSection, sectionItemCount } from '@screens/settings/catalog';
+import { SETTINGS_SECTIONS, SECTION_ITEM_TOTAL, parseSection, sectionItemCount } from '@screens/settings/catalog';
 import type { SectionId } from '@screens/settings/catalog';
+import { searchSettings } from '@screens/settings/search';
+import type { SettingHit } from '@screens/settings/search';
 import { SECTION_ICON } from '@screens/settings/icons';
 import { emphasis } from '@screens/settings/parts';
 import { SpecFixtureHost } from '@screens/settings/SpecCheck';
+import { AnimeSettingsSection } from '@screens/anime/AnimeSettingsSection';
+import { ANIME_SETTING_GROUPS, ANIME_SETTING_TOTAL } from '@anime/settings-catalog';
+import { Clapperboard } from 'lucide-react';
 import {
   AboutSection,
   GeneralSection,
@@ -82,23 +89,86 @@ export function SettingsScreen({
    */
   const fixtureRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * 搜索态（设计稿 `.settings-search-row`）。
+   *
+   * 非空时右栏**整块换成命中列表**，而不是在正文里插一段 —— 设计稿就是这么切的
+   * （`renderSettings` 里 `if (state.query.trim()) body.innerHTML = renderSearchResults()`）。
+   * 两者同时渲染会让"我在看分组"和"我在搜索"两个语义叠在一屏，滚到哪儿都说不清。
+   */
+  const [query, setQuery] = useState('');
+  const hits = useMemo(() => searchSettings(query), [query]);
+
+  /** 右栏滚动区（跳转后要把命中行滚进视野，必须滚这个盒子而不是 window） */
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 待高亮的行：`{ id, seq }`。
+   *
+   * `seq` 是**同一条命中被连点两次**时的去重键 —— 只用 `id` 的话第二次点击
+   * 状态没变化，effect 不重跑，用户看到"点了没反应"。
+   */
+  const [flash, setFlash] = useState<{ id: string; seq: number } | null>(null);
+  /** 递增计数（只做去重键，不参与渲染判断，故用 ref 而非 state） */
+  const flashSeq = useRef(0);
+
+  useEffect(() => {
+    if (!flash) return;
+    // 40ms：等这一帧的分组内容挂上去再找行（设计稿同样用 setTimeout 40）
+    const timer = window.setTimeout(() => {
+      const el = bodyRef.current?.querySelector<HTMLElement>(`[data-setting-id="${flash.id}"]`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('is-flash');
+      window.setTimeout(() => el.classList.remove('is-flash'), 1600);
+    }, 40);
+    return () => window.clearTimeout(timer);
+  }, [flash]);
+
+  /** 点命中行：切到那一组 + 清空搜索 + 高亮该行 */
+  const goHit = (hit: SettingHit) => {
+    setSection(hit.section);
+    setQuery('');
+    setFlash({ id: hit.id, seq: (flashSeq.current += 1) });
+  };
+
   useEffect(() => {
     // 切换后写回地址栏，让"当前在哪个分组"可被分享/刷新保持。
     // `replaceState` 而非 `pushState`：切分组是"看同一页的不同部分"，
     // 不是"去了一个新地方"，不该在窗口历史里堆 5 条记录让返回键失效。
+    //
+    // 🔴 参数要写进 **hash** 而不是 search：HashRouter 下 `#/settings?section=x`
+    // 才是合法形态；写到 search 会变成 `?section=x#/settings`，刷新后路由器读不到。
+    //
+    // 🔴 **只在当前确实是设置页时才写**：这个 effect 只依赖 `section`，它不知道
+    //    自己还在不在设置页。卸载前若 `section` 又变一次（深链同步 / 左栏点击的收尾），
+    //    `replaceState` 会把 `section` 拼到**当时**的 hash 上 —— 而那可能已经是
+    //    翻译屏或音乐屏。真机复现过：`#/translate/drop` → 进设置 → 回翻译，
+    //    地址栏变成 `#/translate/drop?section=general`。
     const url = new URL(window.location.href);
-    url.searchParams.set('section', section);
+    const [hashPath, hashQuery = ''] = url.hash.replace(/^#/, '').split('?');
+    if (hashPath !== '/settings') return;
+    const q = new URLSearchParams(hashQuery);
+    q.set('section', section);
+    url.hash = `#${hashPath}?${q.toString()}`;
     window.history.replaceState(null, '', url.toString());
   }, [section]);
 
-  // 浏览器前进/后退后同步分组（深链的另一半；不做的话地址栏与画面会各说各话）
+  // 浏览器前进/后退后同步分组（深链的另一半；不做的话地址栏与画面会各说各话）。
+  // HashRouter 下前进/后退改的是 hash，浏览器主要发 `hashchange`，`popstate` 不保证 ——
+  // 两个都听，且同一个分组重复 set 是幂等的，不会抖。
   useEffect(() => {
-    const onPop = () => setSection(parseSection(readSectionParam()));
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
+    const sync = () => setSection(parseSection(readSectionParam()));
+    window.addEventListener('popstate', sync);
+    window.addEventListener('hashchange', sync);
+    return () => {
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('hashchange', sync);
+    };
   }, []);
 
-  const active = SETTINGS_SECTIONS.find((s) => s.id === section) ?? SETTINGS_SECTIONS[0];
+  const active = SETTINGS_SECTIONS.find((s) => s.id === section) ?? null;
+  const isAnime = section === 'anime';
 
   return (
     <>
@@ -112,25 +182,22 @@ export function SettingsScreen({
       */}
       <SpecFixtureHost fixtureRef={fixtureRef} />
 
-      <div className="settings">
-        <nav
-          className="settings-nav"
-          aria-label="设置分组"
-          style={{ flex: `0 0 ${SETTINGS.navWidth}px`, top: SETTINGS.navStickyTop }}
-        >
+      <div className="settings-layout" style={{ gridTemplateColumns: `${SETTINGS.navWidth}px minmax(0, 1fr)` }}>
+        <nav className="settings-nav" aria-label="设置分组">
+          <div className="settings-nav-title">偏好设置</div>
           {SETTINGS_SECTIONS.map((s) => {
             const Icon = SECTION_ICON[s.id];
-            const on = s.id === active.id;
+            const on = s.id === active?.id;
             return (
-              <button
+              <Btn
                 key={s.id}
-                type="button"
+                kind="bare"
                 className={on ? 'set-nav-item is-active' : 'set-nav-item'}
                 style={{
                   padding: `${SETTINGS.navItemPadding.y}px ${SETTINGS.navItemPadding.x}px`,
                   gap: SETTINGS.navItemGap,
                 }}
-                aria-current={on ? 'page' : undefined}
+                ariaCurrent={on ? 'page' : undefined}
                 onClick={() => setSection(s.id)}
               >
                 <span className="set-nav-icon" style={{ width: SETTINGS.navItemIcon, height: SETTINGS.navItemIcon }}>
@@ -138,42 +205,146 @@ export function SettingsScreen({
                 </span>
                 <span className="set-nav-label">{s.name}</span>
                 <span className="set-nav-count">{sectionItemCount(s)}</span>
-              </button>
+              </Btn>
             );
           })}
+
+          {/* 第 6 组：番剧设置（数据住在 anime 域，渲染也由该域负责） */}
+          <Btn
+            kind="bare"
+            type="button"
+            className={isAnime ? 'set-nav-item is-active' : 'set-nav-item'}
+            style={{
+              padding: `${SETTINGS.navItemPadding.y}px ${SETTINGS.navItemPadding.x}px`,
+              gap: SETTINGS.navItemGap,
+            }}
+            aria-current={isAnime ? 'page' : undefined}
+            onClick={() => setSection('anime')}
+          >
+            <span className="set-nav-icon" style={{ width: SETTINGS.navItemIcon, height: SETTINGS.navItemIcon }}>
+              <Clapperboard size={14} />
+            </span>
+            <span className="set-nav-label">番剧设置</span>
+            <span className="set-nav-count">{ANIME_SETTING_TOTAL}</span>
+          </Btn>
         </nav>
 
         <div className="settings-main">
-          <header className="settings-head">
-            <div className="settings-title" style={{ fontSize: SETTINGS.pageTitleSize }}>
-              {active.name}
-            </div>
-            {/* blurb 缺省即不渲染这一行（显隐由 catalog 数据决定，不留空行、不崩） */}
-            {active.blurb ? <div className="settings-blurb">{emphasis(active.blurb)}</div> : null}
-          </header>
+          {/*
+            搜索行：设计稿 `.settings-search-row` —— 吸顶在右栏滚动区顶部，
+            左侧搜索框（260px，窄窗铺满）+ 右侧项数。项数文案两态：
+            未搜索「5 组 · 34 项」/ 搜索中「N 项匹配 · 共 34 项」。
+          */}
+          <div className="settings-search-row">
+            <label className="search-field">
+              <Search size={13} />
+              <input
+                type="search"
+                value={query}
+                placeholder="搜索设置项"
+                aria-label="搜索设置项"
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  // Esc 退出搜索态（设计稿同口径：清空查询并回到当前分组）
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setQuery('');
+                  }
+                }}
+              />
+              {query ? (
+                <Btn kind="bare" className="search-clear" ariaLabel="清空搜索" onClick={() => setQuery('')}>
+                  <X size={11} />
+                </Btn>
+              ) : null}
+            </label>
+            <span className="settings-count">
+              {query.trim() ? `${hits.length} 项匹配 · 共 ${SECTION_ITEM_TOTAL} 项` : `${SECTION_ITEM_TOTAL} 项`}
+            </span>
+          </div>
 
-          {active.id === 'general' ? (
-            <GeneralSection
-              mode={mode}
-              onMode={onMode}
-              sidebarLabels={sidebarLabels}
-              onSidebarLabels={onSidebarLabels}
-              fixtureRef={fixtureRef}
-            />
-          ) : null}
-          {active.id === 'translate' ? (
-            <TranslateSection status={status} autoStart={serviceAutoStart} onAutoStart={onServiceAutoStart} />
-          ) : null}
-          {active.id === 'media' ? <MediaSection /> : null}
-          {active.id === 'resource' ? <ResourceSection lib={lib} /> : null}
-          {active.id === 'about' ? <AboutSection /> : null}
+          {/* 设计稿 `.settings-body`：限制正文行长（max-width 880），宽窗下不摊成一整行 */}
+          <div className="settings-body" ref={bodyRef}>
+            {query.trim() ? (
+              <section className="settings-section is-active" key="search">
+                <div className="settings-section-head">
+                  <h2>搜索「{query.trim()}」</h2>
+                  <p>{hits.length} 个设置项匹配</p>
+                </div>
+                {hits.length ? (
+                  <div className="settings-search-results">
+                    {hits.map((hit) => (
+                      <Btn key={hit.id} kind="bare" className="search-hit-row" onClick={() => goHit(hit)}>
+                        <Search size={14} />
+                        <span>
+                          <strong>{hit.label}</strong>
+                          <small>{hit.desc}</small>
+                        </span>
+                        <span className="hit-section">{hit.sectionName}</span>
+                      </Btn>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="settings-empty">
+                    <h3>没有找到匹配项</h3>
+                    <p>试试「缓存」、「歌词」、「引擎」或「许可」。</p>
+                  </div>
+                )}
+              </section>
+            ) : (
+              <>
+                <header className="settings-section-head">
+                  <h2>{isAnime ? '番剧设置' : active?.name}</h2>
+                  {isAnime ? (
+                    <p>
+                      番剧库、播放、字幕、数据源、媒体选择、缓存与 BT、账号与同步、备份 —— {ANIME_SETTING_GROUPS.length}{' '}
+                      组共 {ANIME_SETTING_TOTAL} 项。
+                    </p>
+                  ) : active?.blurb ? (
+                    <p>{emphasis(active.blurb)}</p>
+                  ) : null}
+                </header>
+
+                {isAnime ? <AnimeSettingsSection /> : null}
+                {/* 设计稿 `.settings-section.is-active` 带进场动画：key 变化时重挂，切组即播一次 */}
+                <section className="settings-section is-active" key={section}>
+                  {!isAnime && active?.id === 'general' ? (
+                    <GeneralSection
+                      mode={mode}
+                      onMode={onMode}
+                      sidebarLabels={sidebarLabels}
+                      onSidebarLabels={onSidebarLabels}
+                      fixtureRef={fixtureRef}
+                    />
+                  ) : null}
+                  {!isAnime && active?.id === 'translate' ? (
+                    <TranslateSection status={status} autoStart={serviceAutoStart} onAutoStart={onServiceAutoStart} />
+                  ) : null}
+                  {!isAnime && active?.id === 'media' ? <MediaSection /> : null}
+                  {!isAnime && active?.id === 'resource' ? <ResourceSection lib={lib} /> : null}
+                  {!isAnime && active?.id === 'about' ? <AboutSection /> : null}
+                </section>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </>
   );
 }
 
+/**
+ * 读当前分组。
+ *
+ * 🔴 必须**同时看 hash 与 search**：本应用用的是 HashRouter，地址形如
+ * `#/settings?section=media` —— 查询串在 **hash 里面**，`location.search` 是空的。
+ * 只读 `location.search` 的旧写法会让所有分组深链静默回落到「通用」（点了没反应，
+ * 而地址栏明明写着 `section=media`）。先 hash、后 search，兼容两种形态。
+ */
 function readSectionParam(): string | null {
   if (typeof window === 'undefined') return null;
-  return new URLSearchParams(window.location.search).get('section');
+  const fromHash = window.location.hash.includes('?')
+    ? new URLSearchParams(window.location.hash.slice(window.location.hash.indexOf('?') + 1)).get('section')
+    : null;
+  return fromHash ?? new URLSearchParams(window.location.search).get('section');
 }

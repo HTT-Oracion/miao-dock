@@ -5,7 +5,7 @@
 //
 // ## 🔴 落盘路径由调用方传进来（`file` 参数）
 // Node 版这样设计是为了防 ESM 循环；Rust 版保留同一姿态：本模块对所有输入都是**纯参数**，
-// 唯一的事实源仍是 `paths::state_dir()`（调用方注入，见 `mod.rs`）。
+// 唯一的事实源仍是 `paths::manga_state_dir()`（调用方注入，见 `mod.rs`）。
 use std::path::Path;
 
 use serde_json::{json, Map, Value};

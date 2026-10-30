@@ -316,7 +316,10 @@ mod tests {
         // 留痕文案：排障的人按这句 grep，于是它必须是**可断言**的（抽成纯函数）。
         let line = downgrade_log_line("small", "tiny");
         assert!(line.contains("引擎已从 small 降至 tiny"), "文案：{line}");
-        assert!(line.contains("sakura-1.5b-qwen2.5-v1.0-fp16.gguf"), "留痕必须带真实权重名：{line}");
+        assert!(
+            line.contains("Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf"),
+            "留痕必须带真实权重名：{line}"
+        );
 
         let d = TierDowngrade::new("medium", false);
         let mut applied: Vec<String> = Vec::new();

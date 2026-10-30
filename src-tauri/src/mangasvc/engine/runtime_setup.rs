@@ -375,8 +375,18 @@ pub fn run_bootstrap(
     // ---- 阶段 7：长路径体检（把"会不会撞 260"从推测变成事实） ----
     let longpath = measure_long_path(rt_dir, &log);
 
-    // ---- 阶段 8：写运行时就绪标记 ----
-    on_phase("runtime", "写运行时就绪标记");
+    /*
+     * ---- 阶段 8：写运行时就绪标记 ----
+     *
+     * 🔴 **这里不能发 `on_phase("runtime", …)`**：那会把 `step` 从 `visual` / `llm`
+     *    拉回 `runtime`，而五段时间线是**按 step 单调推进**的 ——
+     *    真机症状是"装配进度从翻译模型跳回视觉模型"（2026-10-25 用户报）：
+     *    step 一回退，`assemblyNotes` 就落到探针推导分支，而探针此刻还没刷新
+     *    （`visual.ready` 仍 false）⇒ 时间线卡在视觉段。
+     *
+     *    写标记只是"收尾落盘"，不是新的装配段 ⇒ 只打日志，不动 step。
+     */
+    log("写运行时就绪标记");
     write_runtime_ready(rt_dir, runtime_manifest, model_manifest, longpath.as_ref(), cuda)?;
 
     Ok(())

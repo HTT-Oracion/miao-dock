@@ -264,7 +264,7 @@ const longText = () => `L${nextN()}${'M'.repeat(LONG_LEN - 4)}`;
 /** 门面调用的默认 env：假上游地址 + 落盘目录 + 宽松超时（用例各自覆盖需要动的那一项）。 */
 function baseEnv(overrides = {}) {
   return {
-    MIAO_STATE_DIR: STATE_DIR,
+    MIAO_MANGA_STATE_DIR: STATE_DIR,
     MIAO_TRANSLATE_YOUDAO_BASE: fake ? `http://127.0.0.1:${fake.port}` : '',
     MIAO_TRANSLATE_CONNECT_MS: '5000',
     MIAO_TRANSLATE_TTFB_MS: '5000',
@@ -1143,7 +1143,7 @@ async function groupC() {
 
   // C1 文件不存在 = 正常首次启动
   {
-    const v = await options(envOf({ MIAO_STATE_DIR: C1_DIR }));
+    const v = await options(envOf({ MIAO_MANGA_STATE_DIR: C1_DIR }));
     check(
       'C1 设置文件不存在 = **正常的首次启动**（不是错误）：全部出厂默认、sources 逐键标 default、fileIssues.exists=false',
       !v.err &&
@@ -1325,7 +1325,7 @@ async function groupK() {
     const dir = path.join(TMP, 'k4');
     fs.mkdirSync(dir, { recursive: true });
     const f = path.join(dir, 'translate-credentials.json');
-    const env = envOf({ MIAO_STATE_DIR: dir });
+    const env = envOf({ MIAO_MANGA_STATE_DIR: dir });
     const r1 = await saveCredentials({ platform: 'youdao', appKey: '', appSecret: 'x' }, env);
     const r2 = await saveCredentials({ platform: 'youdao', appKey: 'ak', appSecret: '' }, env);
     const r3 = await saveCredentials({ platform: 'youdao', appKey: 'ak', appSecret: 'x'.repeat(129) }, env);
@@ -1529,8 +1529,8 @@ async function groupR() {
     SERVICE_ENTRY,
     {
       MIAO_PORT: String(port),
-      MIAO_ROOT: rootDir,
-      MIAO_STATE_DIR: stateDir,
+      MIAO_MANGA_ROOT_DIR: rootDir,
+      MIAO_MANGA_STATE_DIR: stateDir,
       MIAO_TOKEN: TOKEN,
       MIAO_NO_LLM_AUTOSTART: '1', // 本组不关心三进程生命周期
       MIAO_TRANSLATE_YOUDAO_BASE: `http://127.0.0.1:${fake.port}`,

@@ -27,6 +27,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { HeartPulse, Lock, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, X } from 'lucide-react';
 import { DL_BASE_COLOR_DEF, DL_HIGHLIGHT_COLOR_DEF, DL_LINE_COUNT, DL_LYRICS_SIZE } from '@music/player-options';
+import { Btn } from '@components/units';
 
 // ------------------------------------------------------------------ 契约类型
 
@@ -697,63 +698,54 @@ export function DesktopLyrics() {
           </span>
         ) : (
           <div className="dl-ctrl">
-            <button
-              type="button"
-              className="dl-cbtn"
-              onClick={() => sendControl('prev')}
-              title="上一首"
-              aria-label="上一首"
-            >
+            {/* 六枚控制钮全部走 `Btn kind="bare"`：外观仍由本文件内联的 `.dl-cbtn` 决定
+                （bare 只带调用方的类名），换来的是「type=button / title / 无障碍名 / disabled」
+                只有一处实现。 */}
+            <Btn kind="bare" className="dl-cbtn" onClick={() => sendControl('prev')} title="上一首" ariaLabel="上一首">
               <SkipBack size={13} strokeWidth={2.2} />
-            </button>
-            <button
-              type="button"
+            </Btn>
+            <Btn
+              kind="bare"
               className="dl-cbtn"
               onClick={() => sendControl('toggle-play')}
               title={isPlaying ? '暂停' : '播放'}
-              aria-label={isPlaying ? '暂停' : '播放'}
+              ariaLabel={isPlaying ? '暂停' : '播放'}
             >
               {isPlaying ? <Pause size={13} strokeWidth={2.2} /> : <Play size={13} strokeWidth={2.2} />}
-            </button>
-            <button
-              type="button"
-              className="dl-cbtn"
-              onClick={() => sendControl('next')}
-              title="下一首"
-              aria-label="下一首"
-            >
+            </Btn>
+            <Btn kind="bare" className="dl-cbtn" onClick={() => sendControl('next')} title="下一首" ariaLabel="下一首">
               <SkipForward size={13} strokeWidth={2.2} />
-            </button>
-            <button
-              type="button"
+            </Btn>
+            <Btn
+              kind="bare"
               className="dl-cbtn"
               onClick={() => sendControl('cycle-mode')}
               title={`播放模式：${modeMeta.label}`}
-              aria-label={`播放模式：${modeMeta.label}`}
+              ariaLabel={`播放模式：${modeMeta.label}`}
             >
               <ModeIcon size={13} strokeWidth={2.2} />
-            </button>
+            </Btn>
             {/* 分隔线把「播放控制」与「窗口控制（锁定/关闭）」分开 —— 两者都是圆形小图标，
                 相邻且同为中性色时极易误点关闭 */}
             <span className="dl-cdiv" />
-            <button
-              type="button"
+            <Btn
+              kind="bare"
               className="dl-cbtn"
               onClick={toggleLock}
               title="锁定（锁定后不可拖动）"
-              aria-label="锁定桌面歌词"
+              ariaLabel="锁定桌面歌词"
             >
               <Lock size={13} strokeWidth={2.2} />
-            </button>
-            <button
-              type="button"
+            </Btn>
+            <Btn
+              kind="bare"
               className="dl-cbtn is-close"
               onClick={onClose}
               title="关闭桌面歌词"
-              aria-label="关闭桌面歌词"
+              ariaLabel="关闭桌面歌词"
             >
               <X size={13} strokeWidth={2.4} />
-            </button>
+            </Btn>
           </div>
         )}
       </div>
@@ -812,7 +804,7 @@ const WINDOW_CSS = `
   max-width: 480px;
   padding: 14px 44px 14px 22px;
   border-radius: var(--md-radius-lg, 22px);
-  background: linear-gradient(180deg, rgba(38, 33, 64, 0.82), rgba(20, 15, 41, 0.78));
+  background: linear-gradient(180deg, rgba(30, 40, 50, 0.82), rgba(17, 24, 32, 0.78));
   border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
@@ -881,7 +873,7 @@ const WINDOW_CSS = `
 /* 未到第一句时的「纯音乐」提示：固定弱化色（**不跟**用户配的底色走 ——
    它不是一句歌词，用了副行色会让人以为那是一句词）。 */
 .dl-wait {
-  color: rgba(245, 242, 255, 0.66);
+  color: rgba(237, 243, 247, 0.66);
 }
 
 /* 无歌词：显示歌名/歌手 + 「纯音乐」提示，而不是留一条空白浮条 */
@@ -889,7 +881,7 @@ const WINDOW_CSS = `
 .dl-meta-name {
   font-size: 14px;
   line-height: 1.35;
-  color: rgba(245, 242, 255, 0.88);
+  color: rgba(237, 243, 247, 0.88);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -897,7 +889,7 @@ const WINDOW_CSS = `
 .dl-meta-artist {
   font-size: 12px;
   line-height: 1.35;
-  color: rgba(245, 242, 255, 0.5);
+  color: rgba(237, 243, 247, 0.5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -905,7 +897,7 @@ const WINDOW_CSS = `
 .dl-tip {
   margin-top: 3px;
   font-size: 12.5px;
-  color: rgba(245, 242, 255, 0.66);
+  color: rgba(237, 243, 247, 0.66);
 }
 
 /* 无歌曲（待播放）：极简，一行小字 —— 窗口留着是为了让用户先开窗再播歌 */
@@ -916,10 +908,10 @@ const WINDOW_CSS = `
   gap: 7px;
   min-height: 22px;
 }
-.dl-note { font-size: 13px; color: rgba(245, 242, 255, 0.5); }
+.dl-note { font-size: 13px; color: rgba(237, 243, 247, 0.5); }
 .dl-idle-text {
   font-size: 12.5px;
-  color: rgba(245, 242, 255, 0.5);
+  color: rgba(237, 243, 247, 0.5);
   letter-spacing: 0.08em;
 }
 
@@ -940,7 +932,7 @@ const WINDOW_CSS = `
   gap: 1px;
   padding: 3px 6px;
   border-radius: 999px;
-  background: rgba(18, 14, 32, 0.74);
+  background: rgba(17, 24, 32, 0.74);
   border: 1px solid rgba(255, 255, 255, 0.09);
   backdrop-filter: blur(10px);
   opacity: 0;
@@ -962,7 +954,7 @@ const WINDOW_CSS = `
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  color: rgba(245, 242, 255, 0.78);
+  color: rgba(237, 243, 247, 0.78);
   transition: background 140ms ease, color 140ms ease;
 }
 .dl-cbtn:hover {
@@ -989,15 +981,15 @@ const WINDOW_CSS = `
   right: 30px;
   bottom: 8px;
   display: flex;
-  color: rgba(245, 242, 255, 0.5);
+  color: rgba(237, 243, 247, 0.5);
   pointer-events: none;
 }
 
 /* 锁定/失败提示：浮条下方一行小字，几秒后由调用处自行消失 */
 .dl-hint {
   font-size: 11px;
-  color: rgba(245, 242, 255, 0.55);
-  background: rgba(20, 15, 41, 0.7);
+  color: rgba(237, 243, 247, 0.55);
+  background: rgba(17, 24, 32, 0.7);
   padding: 2px 8px;
   border-radius: 999px;
 }

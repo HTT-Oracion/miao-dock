@@ -381,7 +381,7 @@ pub fn scenarios() -> Vec<Value> {
 // ================================================================ 单个场景
 
 fn run_scenario(sc: &Value) -> Value {
-    let root = paths::root_dir();
+    let root = paths::manga_root_dir();
     create_pre_files(&root, sc);
 
     let mut store = Store::new(&root);

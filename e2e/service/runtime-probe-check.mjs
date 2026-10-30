@@ -15,8 +15,8 @@
  * ## 为什么每个场景都自造 runtime 目录
  * 判据的默认落点是 `<appData>/runtimes/manga-translator`（B1）。验收若用真实落点，
  * 就会去 `stat` 用户机器上的引擎安装 ⇒ 结果随机器而变、且会误判。故每场景都用
- * `MIAO_RUNTIME_ROOT` / `MIAO_ENGINE_DIR` / `MIAO_ENGINE_PYTHON` 把判据指到 TMP，
- * 与 `MIAO_ROOT` / `MIAO_STATE_DIR` 一律指 TMP 是同一条纪律。
+ * `MIAO_MANGA_RUNTIME_ROOT` / `MIAO_ENGINE_DIR` / `MIAO_ENGINE_PYTHON` 把判据指到 TMP，
+ * 与 `MIAO_MANGA_ROOT_DIR` / `MIAO_MANGA_STATE_DIR` 一律指 TMP 是同一条纪律。
  * 夹具里的补丁文件按 **Node 侧 SSOT**（`ENGINE_PATCHES`）生成 ⇒ 顺带验证 Rust 镜像
  * （`mangasvc::engine::patches`）的落点与 SSOT 一致：镜像若指错文件，S0 就会报"缺补丁"。
  *
@@ -74,8 +74,8 @@ function startService(extraEnv) {
     env: {
       ...process.env,
       MIAO_TOKEN: TOKEN,
-      MIAO_ROOT: path.join(tmp, 'root'),
-      MIAO_STATE_DIR: path.join(tmp, 'state'),
+      MIAO_MANGA_ROOT_DIR: path.join(tmp, 'root'),
+      MIAO_MANGA_STATE_DIR: path.join(tmp, 'state'),
       MIAO_ENGINE_PROTOCOL: 'mock',
       ...extraEnv,
     },
@@ -265,7 +265,7 @@ for (const [id, missing, set, others] of [
   //    指到模型根）也必须一起传：漏了它们就会读到仓库里那份真清单 ⇒ `weights` 恒红，
   //    S6 变成在测别的东西。
   const { status, body } = await probeRuntime({
-    MIAO_RUNTIME_ROOT: linkBase,
+    MIAO_MANGA_RUNTIME_ROOT: linkBase,
     MIAO_ENGINE_DIR: path.join(link, 'src'),
     MIAO_ENGINE_PYTHON: path.join(
       link,
@@ -408,7 +408,7 @@ if (REFUTE) {
       const target = path.join(fx.rt, 'manga-translator');
       fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
       const { body } = await probeRuntime({
-        MIAO_RUNTIME_ROOT: linkBase,
+        MIAO_MANGA_RUNTIME_ROOT: linkBase,
         MIAO_ENGINE_DIR: path.join(link, 'src'),
         MIAO_ENGINE_PYTHON: path.join(
           link,

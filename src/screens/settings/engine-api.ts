@@ -22,6 +22,20 @@ import { apiGet, apiPost, type RuntimeProbe } from '@/ipc';
 
 export type EngineTier = 'tiny' | 'small' | 'medium';
 export type EngineAccel = 'auto' | 'cuda' | 'mps' | 'cpu';
+
+/*
+ * 档位的**完整写法**：`Small · 均衡`。
+ * 设计稿的档位选项是 `Tiny · 轻快` / `Small · 均衡（推荐）` / `Medium · 精细（不推荐 · 8GB+）`——
+ * 后半截那个词是这个档的**性格**（快 / 均衡 / 细），不是装饰：只写 `Small` 时，
+ * 用户在"当前配置 / 实际生效"那两处看到的也是光秃秃的英文，等于把设计稿的解释信息丢了。
+ * 收在这里而不是各屏各写一份：投放屏与设置屏都要用，两处分别写过，一次只改了一处就会漂移。
+ */
+export const TIER_LABEL: Record<EngineTier, string> = {
+  tiny: 'Tiny · 轻快',
+  small: 'Small · 均衡',
+  medium: 'Medium · 精细',
+};
+
 export const ACCEL_LABEL: Record<EngineAccel, string> = {
   auto: '自动',
   cuda: 'CUDA',
@@ -225,7 +239,12 @@ export interface ModelStatus {
 export type AssemblyStep = 'prepare' | 'runtime' | 'visual' | 'llm' | 'models';
 
 export interface ModelDownloadView {
-  state: 'idle' | 'running' | 'interrupted' | 'done' | 'failed';
+  /**
+   * 下载态。🔴 `error` **必须有**：Rust 侧 `state.rs` 在"非零退出且盘上无 `.part`"
+   *    （不可续传的失败，如解包失败 / 归档损坏）时写的就是它。前端漏掉这个分支时
+   *    会把它当未知态 ⇒ 界面显示「等待开始 + 暂停下载」，与后端 `exitCode:1` 完全矛盾。
+   */
+  state: 'idle' | 'running' | 'interrupted' | 'done' | 'failed' | 'error';
   running: boolean;
   startedAt: string | null;
   finishedAt: string | null;
@@ -328,7 +347,58 @@ export interface EngineSettingsResult {
 
 // ------------------------------------------------------------------ 调用
 
-export const engineOptions = () => apiGet<EngineOptions>('/engine/options');
+/**
+ * 选项清单。
+ *
+ * 🔴 在**取数边界**补齐子块，而不是让每个渲染点各写一条可选链：`EngineOptions` 把这些
+ * 子块声明为必需，TS 因此认为它们一定在；一旦服务端返回残缺对象（旧版服务 / 半截响应），
+ * `o.tier.effective` 就会抛异常，把**整个设置分组**打成空白 —— 一个字段缺失不该有这么大
+ * 的爆炸半径。补齐之后，渲染路径拿到的永远是完整形状。
+ */
+export const engineOptions = async (): Promise<EngineOptions> => {
+  const raw = await apiGet<Partial<EngineOptions>>('/engine/options');
+  const idle = (v: Partial<EngineIdle> | undefined): EngineIdle => ({
+    ms: 0,
+    min: 0,
+    minIsExact: true,
+    appliesAfterRestart: false,
+    source: 'default',
+    ...(v ?? {}),
+  });
+  return {
+    ...(raw as EngineOptions),
+    tier: {
+      effective: null,
+      configured: null,
+      source: 'default',
+      hardwareRecommended: 'tiny',
+      weightsAvailable: [],
+      options: [],
+      ...(raw.tier ?? {}),
+    },
+    accel: {
+      effective: 'auto',
+      choice: 'auto',
+      source: 'default',
+      hardwareRecommended: 'auto',
+      options: [],
+      ...(raw.accel ?? {}),
+    },
+    idle: {
+      llm: idle(raw.idle?.llm),
+      vision: idle(raw.idle?.vision),
+      neverUnload: raw.idle?.neverUnload ?? false,
+    },
+    modelDir: {
+      current: '',
+      configured: null,
+      defaultDir: '',
+      source: 'default',
+      exists: false,
+      ...(raw.modelDir ?? {}),
+    },
+  } as EngineOptions;
+};
 
 export const engineStatus = () => apiGet<EngineStatus>('/engine/status');
 

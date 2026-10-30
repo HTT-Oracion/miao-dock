@@ -6,9 +6,9 @@
  *
  *   一条「四平台接通」的改动横跨五层：
  *     RUST     src-tauri/src/music/mod.rs 定义 + commands/mod.rs 的 generate_handler! 注册
- *     IPC      src/music/ipc.ts 的 invoke('<command>') 封装
- *     PLATFORM src/music/platform.ts 的能力矩阵 + 派发分支
- *     STORE    src/music/store.ts 的平台感知状态与 action
+ *     IPC      src/modules/music/ipc.ts 的 invoke('<command>') 封装
+ *     PLATFORM src/modules/music/platform.ts 的能力矩阵 + 派发分支
+ *     STORE    src/modules/music/store.ts 的平台感知状态与 action
  *     UI       src/screens/MusicScreen.tsx + screens/music/* + styles/*.scss
  *
  *   这五层的静默失败各不相同、互不覆盖：
@@ -43,17 +43,17 @@ const F = {
   rustMod: path.join(APP, 'src-tauri', 'src', 'music', 'mod.rs'),
   rustModels: path.join(APP, 'src-tauri', 'src', 'music', 'models.rs'),
   rustRegistry: path.join(APP, 'src-tauri', 'src', 'commands', 'mod.rs'),
-  ipc: path.join(APP, 'src', 'music', 'ipc.ts'),
-  platform: path.join(APP, 'src', 'music', 'platform.ts'),
-  store: path.join(APP, 'src', 'music', 'store.ts'),
+  ipc: path.join(APP, 'src', 'modules', 'music', 'ipc.ts'),
+  platform: path.join(APP, 'src', 'modules', 'music', 'platform.ts'),
+  store: path.join(APP, 'src', 'modules', 'music', 'store.ts'),
   // D-156：`store.ts` 的 action 段已按切片切到 `music/actions/*.ts`。
   // 变异锚按"这段实现现在住哪"落文件；`s.store` 则是「本体 + 全部切片」的拼接（见 loadSources）。
-  actionsDir: path.join(APP, 'src', 'music', 'actions'),
+  actionsDir: path.join(APP, 'src', 'modules', 'music', 'actions'),
   // D-149：歌词解析纯函数已从 store.ts 抽到 tools/lyrics.ts；歌词判据读「store + lyrics」的拼接。
   lyrics: path.join(APP, 'src', 'tools', 'lyrics.ts'),
   // D-153：持久化（readLS/writeLS/快照/sanitize）已从 store.ts 抽到 music/persist.ts。
-  persist: path.join(APP, 'src', 'music', 'persist.ts'),
-  types: path.join(APP, 'src', 'music', 'types.ts'),
+  persist: path.join(APP, 'src', 'modules', 'music', 'persist.ts'),
+  types: path.join(APP, 'src', 'modules', 'music', 'types.ts'),
   // ── 桌面歌词（P3）──
   rustLyrics: path.join(APP, 'src-tauri', 'src', 'commands', 'lyrics_window.rs'),
   // ── M5 截图取证通道（2026-10-16：音乐屏与歌词窗纳入序列）──
@@ -69,7 +69,7 @@ const F = {
   app: path.join(APP, 'src', 'App.tsx'),
   kernel: path.join(APP, 'src', 'components', 'MusicKernel.tsx'),
   island: path.join(APP, 'src', 'components', 'DynamicIsland.tsx'),
-  audioGraph: path.join(APP, 'src', 'music', 'audioGraph.ts'),
+  audioGraph: path.join(APP, 'src', 'modules', 'music', 'audioGraph.ts'),
   playerBar: path.join(APP, 'src', 'screens', 'music', 'PlayerBar.tsx'),
   expanded: path.join(APP, 'src', 'screens', 'music', 'ExpandedPlayer.tsx'),
   // 逐字歌词渲染组件（逐字高亮任务新增）
@@ -89,6 +89,8 @@ const F = {
   // 播放模式循环按钮（"心动不可用时不显示该档"的 UI 落点，HEARTBEAT 组判它）
   playModeButton: path.join(APP, 'src', 'components', 'units', 'PlayModeButton.tsx'),
   leftPanel: path.join(APP, 'src', 'screens', 'music', 'LeftPanel.tsx'),
+  // 歌单详情（右栏）：歌单曲目的宿主 —— 设计稿交互是"点歌单换右侧"
+  playlistDetail: path.join(APP, 'src', 'screens', 'music', 'PlaylistDetail.tsx'),
   rightPanel: path.join(APP, 'src', 'screens', 'music', 'RightPanel.tsx'),
   localView: path.join(APP, 'src', 'screens', 'music', 'LocalView.tsx'),
   historyView: path.join(APP, 'src', 'screens', 'music', 'HistoryView.tsx'),
@@ -100,6 +102,8 @@ const F = {
   // flex-shrink）经逐条核对**唯一**命中 music.scss，其余分片无同文本 —— 唯一性是
   // 反证能生效的前提，若同一文本在两个分片出现，改一个另一个仍在，断言就不会变红。
   musicScss: path.join(APP, 'src', 'styles', 'music.scss'),
+  /** 播放动作切片：`togglePlay` 等入口，队列空态 toast 的判据落在这里 */
+  musicActionsPlayback: path.join(APP, 'src', 'modules', 'music', 'actions', 'playback.ts'),
   // 右键菜单样式已收口到 components.scss 的 .ui-menu（D-142），反证要按 file 改它
   componentsScss: path.join(APP, 'src', 'styles', 'components.scss'),
   stylesDir: path.join(APP, 'src', 'styles'),
@@ -249,9 +253,9 @@ function loadSources() {
   // 「store.ts + 全部切片」的**逐文件 strip 后拼接** —— 「方法在不在」「这段逻辑在不在」
   // 这类判据才不会因切片而假红。目录**动态列举** ⇒ 以后每切一段自动覆盖，不必改这里。
   // （逐文件 strip 再拼，不能拼原文：`stripComments` 带状态机，跨文件会失同步，见 D-148。）
-  const ACTIONS = readdirSync(path.join(APP, 'src', 'music', 'actions'))
+  const ACTIONS = readdirSync(path.join(APP, 'src', 'modules', 'music', 'actions'))
     .filter((n) => n.endsWith('.ts'))
-    .map((n) => path.join(APP, 'src', 'music', 'actions', n));
+    .map((n) => path.join(APP, 'src', 'modules', 'music', 'actions', n));
   const SF = [F.store, ...ACTIONS]; // store 本体 + 全部切片
   const s = {
     rustMod: readMaybe(F.rustMod),
@@ -296,6 +300,7 @@ function loadSources() {
     queueDrawer: readMaybe(F.queueDrawer),
     playModeButton: readMaybe(F.playModeButton),
     leftPanel: readMaybe(F.leftPanel),
+    playlistDetail: readMaybe(F.playlistDetail),
     rightPanel: readMaybe(F.rightPanel),
     localView: readMaybe(F.localView),
     historyView: readMaybe(F.historyView),
@@ -857,9 +862,10 @@ add('UI.drawerAboveExpanded', 'UI', (s) => {
     return z ? Number(z[1]) : null;
   };
   const exp = pickZ('\\.music-exp');
-  const drawer = pickZ('\\.music-drawer');
+  // 抽屉换成通用 `SideDrawer` 单元后，层级落在 `.ui-drawer-layer` 上（`.queue-drawer` 只管宽度与圆角）
+  const drawer = pickZ('\\.ui-drawer-layer');
   if (exp === null || drawer === null)
-    return { ok: false, detail: '未解析到 .music-exp / .music-drawer 的 z-index（选择器或写法变了）' };
+    return { ok: false, detail: '未解析到 .music-exp / .ui-drawer-layer 的 z-index（选择器或写法变了）' };
   return {
     ok: drawer > exp,
     detail: drawer > exp ? '' : `播放队列(z)=${drawer} 被展开播放器(z)=${exp} 盖住 —— 点「播放队列」会看不到任何东西`,
@@ -877,9 +883,13 @@ add('UI.modalAboveExpanded', 'UI', (s) => {
     return z ? Number(z[1]) : null;
   };
   const exp = pickZ('\\.music-exp');
-  const modal = pickZ('\\.modal-mask');
+  /*
+   * 层级现在挂在 `.modal-layer`（弹层骨架）上，`.modal-mask` 只是层内的遮罩 ——
+   * 设计稿把弹窗拆成 layer / mask / card 三段。先找 layer，再回落到 mask（兼容旧写法）。
+   */
+  const modal = pickZ('\\.modal-layer') ?? pickZ('\\.modal-mask');
   if (exp === null || modal === null)
-    return { ok: false, detail: '未解析到 .music-exp / .modal-mask 的 z-index（选择器或写法变了）' };
+    return { ok: false, detail: '未解析到 .music-exp / .modal-layer 的 z-index（选择器或写法变了）' };
   return {
     ok: modal > exp,
     detail: modal > exp ? '' : `退出确认(z)=${modal} 被展开播放器(z)=${exp} 盖住 —— 点「退出喵坞」不会有任何反应`,
@@ -893,18 +903,188 @@ add('UI.searchCapsule', 'UI', (s) => ({
   ok: /\bsearchProvider\b/.test(s.uiSource) && /\bsetSearchProvider\b/.test(s.uiSource),
   detail: uiNote(s, '未读到搜索源胶囊（searchProvider/setSearchProvider）'),
 }));
-add('UI.chartGrid', 'UI', (s) => ({
-  ok: /\bchartGrid\b/.test(s.uiSource) || /charts\s+grid/i.test(s.uiSource),
-  detail: uiNote(s, '未读到榜单网格形态（chartGrid / charts grid）'),
-}));
-add('UI.chartScroll', 'UI', (s) => ({
-  ok: /scrollLeft\s*\+=/.test(s.uiSource) && /\bdeltaY\b/.test(s.uiSource),
-  detail: uiNote(s, '未读到「滚轮纵向 → scrollLeft」横向滚动映射（scrollLeft += / deltaY）'),
-}));
-add('UI.dailyEntry', 'UI', (s) => ({
-  ok: /\bdailySongs\b/.test(s.uiSource) || /setRightView\(\s*['"]daily['"]/.test(s.uiSource),
-  detail: uiNote(s, "未读到每日推荐入口（dailySongs / setRightView('daily')）"),
-}));
+add('UI.chartGrid', 'UI', (s) => {
+  /*
+   * 榜单卡（设计稿 `.chart-grid` 四列 + `.chart-card` 卡头 + `.chart-row` 排行）。
+   *
+   * 产品旧形态是 `.music-charts` 的**横向滚动小圆卡**（64px，只有封面与榜名），点开才进详情；
+   * 设计稿是**首页直接铺前 5 名排行**。这不是"换个样式"：首页要回答"各榜在流行什么"，
+   * 小圆卡答不了，得再点一次。
+   */
+  const charts = readMaybe(path.join(F.musicUiDir, 'Charts.tsx')) ?? '';
+  if (!charts) return { ok: false, detail: uiNote(s, '未读到 Charts.tsx') };
+  const problems = [];
+  if (!charts.includes('className="chart-grid"')) problems.push('榜单容器不是 .chart-grid');
+  if (!charts.includes('className="chart-card"')) problems.push('榜单卡不是 .chart-card');
+  if (!charts.includes('className="chart-row"')) problems.push('榜单卡里没有 .chart-row 排行');
+  if (!/pl\.preview/.test(charts)) problems.push('排行没有接 preview（可能写死了假数据）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.chartScroll', 'UI', (s) => {
+  /*
+   * 旧判据钉的是"滚轮纵向 → scrollLeft 横向滚动"，那是**横滚小卡**形态的补丁。
+   * 设计稿改成四列网格后**没有横轴**，那条映射也就不该存在 —— 判据随之反转：
+   * 网格形态下若还留着 `onWheel → scrollLeft`，说明旧横滚容器没删干净（两形态并存会互相干扰）。
+   */
+  const charts = stripComments(readMaybe(path.join(F.musicUiDir, 'Charts.tsx')) ?? '');
+  const leftover = /scrollLeft\s*\+=/.test(charts) || /\bdeltaY\b/.test(charts);
+  return {
+    ok: !leftover,
+    detail: leftover ? '四列网格形态下仍留着 onWheel → scrollLeft 的横滚残留' : '',
+  };
+});
+add('UI.dailyEntry', 'UI', (s) => {
+  /*
+   * 每日推荐的入口（设计稿在 `.entry-grid` 的三枚入口卡里，文案「每日推荐」）。
+   * 旧判据接受"榜单区最前面那张 .music-chart.is-daily 小卡"，但那个形态已按设计稿删除。
+   *
+   * ⚠️ 打开方式已改：原先切右栏独立的 daily 视图（`setRightView('daily')` → `DailyView`），
+   * 现在与歌单 / 榜单**统一进 `PlaylistDetail`** —— 每日推荐没有 Playlist 对象、
+   * 也没有按 id 取曲目的接口，故走 `openTracksDetail` 灌入内存里的 songs。
+   * `DailyView` 已删除，判据同步到新的接线。
+   */
+  const src = stripComments(s.uiSource ?? '');
+  const problems = [];
+  if (!/openTracksDetail\(/.test(src)) problems.push('入口卡没有接 openTracksDetail（统一详情）');
+  if (!/每日推荐/.test(src)) problems.push('入口卡没有「每日推荐」文案');
+  // 旧的独立 daily 视图必须已随统一改造删除，否则同一个"详情"又有两套
+  if (/function DailyView/.test(src)) problems.push('DailyView 仍在（每日推荐未统一到歌单详情）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.sectionLinkBtn', 'UI', (s) => {
+  /*
+   * 节头右端的动作键必须是设计稿的 `.link-btn`（轻动作），不是 `.music-btn`（带底色的操作按钮）。
+   * 语义层级不同：节头只该出现"刷新 / 换一批"这类轻动作，带底色的按钮会把节头压得比标题还重。
+   * 三处：榜单「刷新」/ 推荐歌单「换一批」/ 今日精选「换一批」。
+   *
+   * ⚠️ 匹配用 `className="link-btn`（**不带收尾引号**）：推荐歌单那枚在未登录时是
+   * `link-btn is-locked`（压淡而不是置灰，点下去弹登录框）。写死 `className="link-btn"`
+   * 会把这一处漏掉，变成"只找到 2 处"的假红。
+   */
+  const charts = stripComments(readMaybe(path.join(F.musicUiDir, 'Charts.tsx')) ?? '');
+  const right = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const problems = [];
+  const linkCount =
+    (charts.match(/className="link-btn/g) ?? []).length + (right.match(/className="link-btn/g) ?? []).length;
+  if (linkCount !== 3) problems.push(`节头动作键有 ${linkCount} 处 .link-btn，应为 3（榜单/推荐/精选各一）`);
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  if (!/\.link-btn\s*\{/.test(css)) problems.push('缺少 .link-btn 样式');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.lockedLinkBtn', 'UI', (s) => {
+  /*
+   * 未登录时「推荐歌单」的「换一批」**必须点开登录框**，不能是"点了没反应"或"置灰说不出原因"。
+   *
+   * 判据钉三件事（缺一条都会退化成最坏那种：按钮在那儿、点下去什么都不发生）：
+   *   ① 按钮的 onClick 走 `openLogin`（而不是直接调 `loadRecommendPlaylists`）；
+   *   ② 未登录时**不 disabled**（置灰的按钮说不出"为什么要登录"）；
+   *   ③ 有 `is-locked` 这个压淡态，且 CSS 里真有它的规则 ——
+   *      只有类名没有规则 = 换了个更坏的形态（点得动，但看起来和能用的按钮一模一样）。
+   */
+  const right = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const problems = [];
+  if (!/loggedIn\s*\?\s*void\s+loadRecommendPlaylists\(\)\s*:\s*void\s+openLogin\(\)/.test(right)) {
+    problems.push('未登录时的「换一批」没有走 openLogin（点了会静默无反应）');
+  }
+  if (!/disabled=\{loggedIn\s*&&\s*loading\}/.test(right)) {
+    problems.push('按钮的 disabled 不是「已登录且加载中」——未登录时会被置灰，说不出为什么要登录');
+  }
+  if (!/is-locked/.test(right)) problems.push('没有 is-locked 压淡态');
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  if (!/\.link-btn\.is-locked\s*\{/.test(css)) problems.push('`.link-btn.is-locked` 规则缺失（压淡态没有样式）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.chartCardPreview', 'UI', (s) => {
+  /*
+   * 首页榜单卡的排行必须来自**真实数据**（`loadCharts` 并发取的 `preview`），
+   * 不是写死的假排行 —— 这是"设计稿是演示数据、产品必须接真数据"那条纪律的落点。
+   * 判据：类型里有 preview 字段、loadCharts 里调用了 withPreview、withPreview 里真的取歌。
+   */
+  const types = stripComments(readMaybe(path.join(APP, 'src', 'modules', 'music', 'types.ts')) ?? '');
+  const right = stripComments(readMaybe(path.join(APP, 'src', 'modules', 'music', 'actions', 'right.ts')) ?? '');
+  const problems = [];
+  if (!/preview\?:\s*\{\s*title/.test(types)) problems.push('Playlist 类型里没有 preview 字段');
+  const calls = (right.match(/withPreview\(/g) ?? []).length;
+  if (calls < 3) problems.push(`withPreview 调用点只有 ${calls} 个（声明 1 + 两个分支各 1，应为 3）`);
+  if (!/platform\.rankSongs|platform\.playlistTracks/.test(right)) problems.push('withPreview 没有真的去取歌');
+  if (!/CHART_PREVIEW_N\s*=\s*5/.test(right)) problems.push('预览条数不是 5（设计稿卡里就是 5 行）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.playlistCards', 'UI', (s) => {
+  /*
+   * 推荐歌单必须是**封面卡网格**（设计稿 `.card-grid` + `.playlist-card`），不是列表行。
+   * 列表行只能表达"名字 + 数字"，封面卡才能让"按最近的循环生成"这批歌单被**看**出来 ——
+   * 推荐位的价值一半在图上。
+   * 判据：容器 `.card-grid` / 卡 `.playlist-card` / 有封面位与播放钮 / 不再用 VirtualList 渲染它。
+   */
+  const src = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  const problems = [];
+  if (!src.includes('className="card-grid"')) problems.push('推荐歌单容器不是 .card-grid');
+  if (!src.includes('className="playlist-card"')) problems.push('推荐歌单卡不是 .playlist-card');
+  if (!src.includes('pl-play')) problems.push('卡片缺 .pl-play 播放钮');
+  if (!/\.card-grid\s*\{/.test(css)) problems.push('缺少 .card-grid 样式');
+  if (!/\.playlist-card\s*\{/.test(css)) problems.push('缺少 .playlist-card 样式');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.songTable', 'UI', (s) => {
+  /*
+   * 今日精选必须是**带表头的曲目表**（设计稿 `.song-table` + `.song-head`），不是裸列表。
+   * 表头说明这五列各是什么（序号 / 歌曲 / 专辑 / 时长 / 操作）—— 没有表头时用户要自己猜
+   * 第二列是专辑还是歌手。
+   */
+  const src = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  const problems = [];
+  if (!src.includes('className="song-table"')) problems.push('今日精选没有 .song-table 外壳');
+  if (!src.includes('className="song-head"')) problems.push('缺少 .song-head 表头');
+  if (!/\.song-table\s*\{/.test(css)) problems.push('缺少 .song-table 样式');
+  if (!/\.song-head,\s*\n?\.song-table \.music-row\s*\{/.test(css.replace(/\r/g, ''))) {
+    problems.push('表头与行没有共用同一套列宽（会错列）');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.playerBarGlass', 'UI', (s) => {
+  /*
+   * 播放条是设计稿的**浮起玻璃卡**（`.pb-card`）：22 圆角 + blur(20px) saturate(1.3) +
+   * 92% 半透明 + 大而软的投影 + 左右 18 内距。
+   * 三样一起才成立：半透明（能看见内容流过）、模糊（文字不干扰）、大投影（真的浮起来）。
+   * 去掉任何一样都退回"又一张白卡"，与上面内容区没有主次。
+   */
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  const block = /\.music-player\s*\{[^}]*\}/.exec(css);
+  if (!block) return { ok: false, detail: '找不到 .music-player 规则' };
+  const t = block[0];
+  const problems = [];
+  if (!/border-radius:\s*22px/.test(t)) problems.push('圆角不是 22');
+  if (!/blur\(20px\)/.test(t)) problems.push('缺 blur(20px)');
+  if (!/saturate\(1\.3\)/.test(t)) problems.push('缺 saturate(1.3)');
+  if (!/color-mix\(in srgb, var\(--miao-surface\) 92%/.test(t)) problems.push('底色不是 92% 半透明白');
+  if (!/0 24px 60px -30px/.test(t)) problems.push('投影不是设计稿的 0 24px 60px -30px');
+  if (!/padding:\s*0 18px/.test(t)) problems.push('左右内距不是 18');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.viewSections', 'UI', (s) => {
+  /*
+   * 中栏视图的直接子元素必须是设计稿那五个：`music-hero` / `entry-grid` / 三个 `.mc-section`。
+   *
+   * 这条是**在真实应用里量出来的**：dev server 没有后端，三节一直是 `ui-empty`，
+   * 结构问题被数据缺失盖住了；接上真服务后一眼看到 ①榜单节外多了一层裸 `<div id="music-charts">`
+   * ②推荐歌单与今日精选只有 `.mc-section-head` 没有 `.mc-section` 容器（节头直接挂在视图下）。
+   * 两种都是"看起来能跑、节间距与层级却不对"，只有把**层级**写进判据才抓得到。
+   */
+  const src = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const problems = [];
+  // ① 榜单不许再被裸 div 包（Charts 自带 .mc-section）
+  if (/<div id="music-charts">/.test(src)) problems.push('榜单节外仍套着一层裸 div（Charts 自带 .mc-section）');
+  // ② 推荐歌单与今日精选必须有 .mc-section 容器
+  const sections = (src.match(/<div className="mc-section">/g) ?? []).length;
+  if (sections < 2) problems.push('推荐歌单 / 今日精选没有 .mc-section 容器（节头直接挂在视图下）');
+  // ③ 节头不许以 fragment 形式挂在视图下
+  const orphanHeads = (src.match(/\?>\s*\n\s*<div className="mc-section-head">/g) ?? []).length;
+  if (orphanHeads > 0) problems.push('有节头以 fragment 形式直接挂在视图下（缺 .mc-section 容器）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
 add('UI.playHistory', 'UI', (s) => ({
   ok: /\bplayHistoryList\b/.test(s.uiSource),
   detail: uiNote(s, '未读到播放历史视图（playHistoryList）'),
@@ -914,9 +1094,16 @@ add('UI.loadMore', 'UI', (s) => ({
   detail: uiNote(s, '未读到歌单滚动加载（loadMoreLeft/loadMoreRight）'),
 }));
 
-/** 需要走虚拟滚动的长列表（行数无上界：歌单曲目可上千首、队列上限 2000） */
+/**
+ * 需要走虚拟滚动的长列表（行数无上界：歌单曲目可上千首、队列上限 2000）。
+ *
+ * ⚠️ `LeftPanel.tsx` **不在**这份清单里：它现在是两个不同角色的文件 ——
+ * 歌单列表（几十条，且设计稿的组头 32 与歌单行 46 **不等高**，定高虚拟列表套不上）
+ * 与歌单曲目（上千条，必须虚拟滚动）。后者由 `UI.leftTracksVirtual` 单独钉住，
+ * 前者由 `UI.sideGroups` 钉住结构。把整份文件列在这里会让"必须用 VirtualList"
+ * 与"组头行高不同"两条要求互相矛盾，只能靠改断言解红 —— 那正是要避免的。
+ */
 const ROW_LISTS = {
-  'LeftPanel.tsx': '左栏「我的歌单 / 歌单曲目」',
   'RightPanel.tsx': '右栏「搜索结果 / 推荐歌单 / 曲目 / 每日推荐」',
   'HistoryView.tsx': '播放历史',
   'LocalView.tsx': '本地曲库',
@@ -934,6 +1121,157 @@ add('UI.virtualList', 'UI', (s) => {
   ];
   const missing = need.filter(([re]) => !re.test(v)).map(([, n]) => n);
   return { ok: missing.length === 0, detail: missing.length ? `虚拟列表缺：${missing.join('、')}` : '' };
+});
+add('SEARCH.inProgressCopy', 'SEARCH', (s) => {
+  /*
+   * 搜索中的那句必须是**"正在搜索 <平台>"**（设计稿 `正在搜索 ${已选搜索源}…`），
+   * 而不是光秃秃的「搜索中…」—— 后者不说搜的是哪个平台，用户无法判断是不是选错了源。
+   * 副文也按设计稿给「搜索结果会同时出现歌曲与专辑」。
+   */
+  const src = readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '';
+  const problems = [];
+  if (!/正在搜索\s*\{providerLabel\(searchProvider\)\}…/.test(src)) {
+    problems.push('搜索中没说清在搜哪个平台（缺「正在搜索 {平台}…」）');
+  }
+  if (!src.includes('搜索结果会同时出现歌曲与专辑')) {
+    problems.push('搜索中缺设计稿的副文「搜索结果会同时出现歌曲与专辑」');
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('QUEUE.emptyToastCopy', 'QUEUE', (s) => {
+  /*
+   * 队列为空时按播放键要有 **warning toast**（设计稿：`播放队列是空的` / `从首页或搜索里挑一首歌吧`）。
+   * 静默不响应会被当成"按钮坏了"；而这条路径下确实没有"当前这首"可暂停。
+   * 判据落在 store 的 `togglePlay` 上（不是某个按钮的 onClick）—— 播放条、展开播放器、
+   * 快捷键都会汇到这里，只有这一处才算全覆盖。
+   */
+  /*
+   * ⚠️ 先剥注释：本段注释里**正讨论着**这两句（"设计稿：播放队列是空的 / 从首页或搜索里挑一首歌吧"），
+   * 不剥的话把 toast 整行删掉断言照样绿 —— 判据被注释撑着。
+   */
+  const src = stripComments(readMaybe(F.musicActionsPlayback) ?? '');
+  if (!src) return { ok: false, detail: uiNote(s, '未读到 actions/playback.ts') };
+  const problems = [];
+  const body = src.slice(src.indexOf('togglePlay:'));
+  if (!/queue\.length === 0/.test(body)) problems.push('togglePlay 没有判空队列');
+  if (!src.includes('播放队列是空的')) problems.push('缺 toast 主文「播放队列是空的」');
+  if (!src.includes('从首页或搜索里挑一首歌吧')) problems.push('缺 toast 副文「从首页或搜索里挑一首歌吧」');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.sectionHeadClass', 'UI', (s) => {
+  /*
+   * 首页的"节"必须是设计稿那一套类名：容器 `.mc-section` + 节头 `.mc-section-head`。
+   *
+   * 产品的历史类名是 `.music-sec` / `.music-card-hd`（"卡片头"），语义上把"首页的一节"
+   * 说成了"一张卡的头"——同一批样式两套叫法，改设计稿值时必然漏掉一边（本轮就是：
+   * CSS 改成了 `.mc-section`，组件还写着 `.music-sec`，整块 20px 的节间距静默失效）。
+   * 判据：music 屏里不许再出现旧类名（剥注释后判，注释里正讨论着它们）。
+   */
+  const dir = F.musicUiDir;
+  const problems = [];
+  const stale = { 'music-sec': 0, 'music-card-hd': 0 };
+  for (const f of ['Charts.tsx', 'RightPanel.tsx', 'LeftPanel.tsx']) {
+    const src = stripComments(readMaybe(path.join(dir, f)) ?? '');
+    for (const k of Object.keys(stale)) {
+      const hits = (src.match(new RegExp('"' + k + '"', 'g')) ?? []).length;
+      stale[k] += hits;
+    }
+  }
+  for (const [k, n] of Object.entries(stale)) {
+    if (n > 0) problems.push(`${n} 处仍在用旧类名 ${k}`);
+  }
+  const charts = stripComments(readMaybe(path.join(dir, 'Charts.tsx')) ?? '');
+  if (!charts.includes('className="mc-section"')) problems.push('Charts 的节容器不是 .mc-section');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.searchSourcesInResults', 'UI', (s) => {
+  /*
+   * 搜索源胶囊（设计稿 `.search-sources`）的**位置**：它只在**搜索结果页**里渲染。
+   *
+   * 产品曾把它做成 `.cap-row` 常驻在 `.music-view` 顶部 —— 于是首页 / 榜单 / 歌单页
+   * 都挂着一条"这次搜索该打哪些平台"的选择器，而那几个页面没有要回答这个问题。
+   * 判据要的是"渲染点在 SearchResults 里、且不在视图壳里"，两条都断：
+   *   ① 视图壳（RightPanel 的主 return）里**没有** `<SearchCaps`；
+   *   ② `SearchResults` 里**有** `<SearchCaps`（含三条早返回分支 —— 搜索中/无结果时
+   *      也要能换平台，否则用户只能等这次搜完才知道选错）。
+   */
+  const src = readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx'));
+  if (!src) return { ok: false, detail: uiNote(s, '未读到 RightPanel.tsx') };
+  const problems = [];
+  const viewAt = src.indexOf('className="music-view"');
+  const resultsAt = src.indexOf('function SearchResults');
+  if (viewAt < 0) problems.push('找不到 .music-view 视图壳');
+  if (resultsAt < 0) problems.push('找不到 SearchResults');
+  if (viewAt >= 0 && resultsAt > viewAt) {
+    // 视图壳那段（到 SearchResults 定义之前）不许出现 <SearchCaps
+    const shell = src.slice(viewAt, resultsAt);
+    if (/<SearchCaps\s*\/>/.test(shell)) problems.push('视图壳里仍在渲染搜索源胶囊（首页/榜单页会一直挂着它）');
+  }
+  const resultsBody = resultsAt >= 0 ? src.slice(resultsAt) : '';
+  /*
+   * **精确 3 处**，不是 ≥2：三条分支（搜索中 / 无结果 / 有结果）各一处。
+   * 阈值写成 ≥2 时"删掉其中一处"照样绿（实测踩过），那样的分母等于没有。
+   */
+  const capsUse = (resultsBody.match(/<SearchCaps\s*\/>/g) ?? []).length;
+  if (capsUse !== 3) {
+    problems.push(`搜索结果里的搜索源胶囊有 ${capsUse} 处，应为 3（搜索中/无结果/有结果三条分支各一）`);
+  }
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.noCenterWrapper', 'UI', (s) => {
+  /*
+   * 设计稿 `.music-view` 直接承载各视图的节：中间不许再有 `.music-rightbody` 之类的包裹层。
+   *
+   * ⚠️ 必须先剥注释再判：本轮的改动说明里**正讨论着**这个类名（"多出两层 —— .cap-row 与
+   * .music-rightbody"），不剥的话注释会把判据喂成"仍在用"（假红），反过来若有人只把
+   * 实现删掉、把类名留在注释里，不剥又会遮住下一次"加回去"。
+   */
+  const src = stripComments(readMaybe(path.join(F.musicUiDir, 'RightPanel.tsx')) ?? '');
+  const css = stripComments(readMaybe(F.musicScss) ?? '');
+  if (!src) return { ok: false, detail: uiNote(s, '未读到 RightPanel.tsx') };
+  const problems = [];
+  if (/music-rightbody/.test(src)) problems.push('视图里仍有 .music-rightbody 包裹层');
+  if (/\.music-rightbody\s*\{/.test(css)) problems.push('样式里仍留着 .music-rightbody 规则');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.sideGroups', 'UI', (s) => {
+  /*
+   * 左栏歌单列表的**分组结构**（设计稿 `.ms-group` → `.ms-caption` + 若干 `.ms-row`）。
+   *
+   * 产品此前是"一个 `.music-body` 里塞一条扁平行表"，组头与歌单行混在同一个列表里；
+   * 设计稿的分组是**嵌套结构**（每组一个容器，组头是该组的第一个孩子）。
+   * 三处都断：① 有 `.ms-group`；② 组头是 `.ms-caption`；③ 组内空态用 `.ms-empty`
+   * （不是通用 `Empty` —— 那是整块视图的空态，会占满高度）。
+   */
+  const src = readMaybe(path.join(F.musicUiDir, 'LeftPanel.tsx'));
+  if (!src) return { ok: false, detail: uiNote(s, '未读到 LeftPanel.tsx') };
+  const problems = [];
+  if (!/className="ms-group"/.test(src)) problems.push('歌单列表没有 .ms-group 分组容器');
+  /*
+   * 组头是 `.ms-caption`（设计稿的组头形态）。
+   * ⚠️ 它现在是 `<button>` 而不是 `<div>`（#16：组头可折叠），className 也随之变成条件式
+   * `className={collapsed[label] ? 'ms-caption is-collapsed' : 'ms-caption'}` ——
+   * 所以这里同时接受两种写法，否则一次可折叠化就会让断言恒红。
+   */
+  const hasCaption = /className="ms-caption"/.test(src) || /'ms-caption is-collapsed'/.test(src);
+  if (!hasCaption) problems.push('组头不是 .ms-caption（设计稿的组头形态）');
+  if (!/className="ms-empty"/.test(src)) problems.push('组内空态不是 .ms-empty（用通用 Empty 会占满高度）');
+  return { ok: problems.length === 0, detail: problems.join('；') };
+});
+add('UI.leftTracksVirtual', 'UI', (s) => {
+  /*
+   * 歌单曲目仍然必须虚拟滚动（上千首）。
+   *
+   * ⚠️ 曲目列表**已从左栏搬到右栏**（设计稿交互：点歌单换右侧，左栏保持列表），
+   * 所以判据对象从 `LeftPanel.tsx` 换成 `PlaylistDetail.tsx` —— 断言守的是
+   * "上千首不卡"这个事实，不是"它住在哪个文件里"。
+   */
+  const src = readMaybe(path.join(F.musicUiDir, 'PlaylistDetail.tsx'));
+  if (!src) return { ok: false, detail: uiNote(s, '未读到 PlaylistDetail.tsx（歌单详情不在预期位置）') };
+  return {
+    ok: /<VirtualList/.test(src),
+    detail: /<VirtualList/.test(src) ? '' : '歌单曲目列表未接虚拟滚动（上千首会卡）',
+  };
 });
 add('UI.virtualListUsed', 'UI', (s) => {
   const missing = [];
@@ -1023,9 +1361,14 @@ add('UI.playerBarRule', 'UI', (s) => {
   const block = (s.css.match(/\.music\s*\{([^}]*)\}/) || [, ''])[1];
   if (!/(^|\n)\s*height:\s*100%/.test(block))
     missing.push('样式的 .music 未改成定高（仍是 min-height:100%，会撑出页面级滚动）');
-  const cols = (s.css.match(/\.music-cols\s*\{([^}]*)\}/) || [, ''])[1];
-  if (!/grid-template-rows\s*:\s*minmax\(\s*0\s*,/.test(cols)) {
-    missing.push('.music-cols 未固定行高（缺 grid-template-rows: minmax(0, 1fr)，卡片会被内容撑开、失去内部滚动）');
+  // 三栏布局（设计稿 `music-layout`）：中间栏必须能收缩（`minmax(0, …)`），
+  // 否则内容一长就把整行撑开、把播放条顶出视口 —— 与旧 `.music-cols` 那条是同一件事。
+  const layout = (s.css.match(/\.music-layout\s*\{([^}]*)\}/) || [, ''])[1];
+  if (!/grid-template-columns\s*:\s*[^;]*minmax\(\s*0\s*,/.test(layout)) {
+    missing.push('.music-layout 中间栏未用 minmax(0, …)（内容会把整行撑开、播放条被顶出视口）');
+  }
+  if (!/overflow\s*:\s*hidden/.test(layout)) {
+    missing.push('.music-layout 未禁外层滚动（三栏各自滚动，容器再滚会出双滚动条）');
   }
   return { ok: missing.length === 0, detail: missing.length ? `播放条/定高布局缺：${missing.join('、')}` : '' };
 });
@@ -1436,7 +1779,7 @@ add('HEARTBEAT.noRandomDegrade', 'HEARTBEAT', (s) => {
     if (!/canUseHeartbeat/.test(src)) missing.push(`${id} 未走 canUseHeartbeat 判据`);
   }
   // 冷启动兜底：偏好里的 heartbeat 必须被挡（此刻 queueFromLiked 恒假 ⇒ 该档不可用）
-  const init = stripComments(readMaybe(path.join(APP, 'src', 'music', 'actions', 'init.ts')));
+  const init = stripComments(readMaybe(path.join(APP, 'src', 'modules', 'music', 'actions', 'init.ts')));
   if (!/prefs\.playMode\s*!==\s*'heartbeat'/.test(init))
     missing.push('hydratePrefs 未挡下偏好里的 heartbeat（冷启动会出现"显示心动却不可用"）');
   return { ok: missing.length === 0, detail: missing.length ? `心动不可用时的处理：${missing.join('、')}` : '' };
@@ -1583,24 +1926,27 @@ add('PLAYLIST.likedAutoHeartbeat', 'HEARTBEAT', (s) => {
   if (!/name:\s*LIKED_PLAYLIST_NAME/.test(left)) missing.push('没有把该歌单名统一改成「我喜欢的音乐」');
   // 并且要持久化，跨会话保留（prefs.ts 不在 s.store 的拼接范围里，直接按路径读）
   // ⚠️ 用 \b 而不是裸子串：把声明改名成 `likedHeartbeatOnRemoved` 时裸子串仍会命中（反证轮实测假绿）。
-  const prefsSrc = stripComments(readMaybe(path.join(APP, 'src', 'music', 'prefs.ts')));
+  const prefsSrc = stripComments(readMaybe(path.join(APP, 'src', 'modules', 'music', 'prefs.ts')));
   if (!/\blikedHeartbeatOn\b/.test(prefsSrc)) missing.push('likedHeartbeatOn 未进偏好（重启就丢）');
   return { ok: missing.length === 0, detail: missing.length ? `我喜欢的音乐的心动记忆：${missing.join('、')}` : '' };
 });
 
-// ── 播放队列抽屉（定位当前曲 + 从右滑入）────────────────────────────────
+// ── 播放队列抽屉（当前曲常驻顶部 + 从右滑入）──────────────────────────────
 add('QUEUE.scrollsToCurrent', 'QUEUE', (s) => {
-  // 需求第 3 条：点开播放列表要定位到正在播的那首。
+  // 需求第 3 条：点开播放列表要"看得见正在播的那首"。
+  //
+  // 口径演进（ver3）：设计稿把抽屉改成**两段式** —— 上面「正在播放」单独一行固定不滚、
+  // 下面「接下来 · N 首」才是滚动区。于是"定位到当前曲"从"滚过去"变成了**结构保证**：
+  // 那一行永远在顶部，不存在被滚走的情况。所以判据从 `scrollToIndex={currentIndex}`
+  // 改成"抽屉里真的渲染了正在播放段，且接下来段从 currentIndex+1 起切"。
+  // 仍要求 VirtualList 支持 scrollToIndex（左栏/搜索结果还在用它）。
   const drawer = stripComments(s.queueDrawer ?? '');
   const vl = stripComments(readMaybe(F.virtualList));
   const missing = [];
-  if (!/scrollToIndex=\{currentIndex\}/.test(drawer)) missing.push('QueueDrawer 未把当前下标交给列表定位');
+  if (!/qd-caption">正在播放/.test(drawer)) missing.push('QueueDrawer 没有「正在播放」段（当前曲必须常驻顶部）');
+  if (!/queue\.slice\(currentIndex \+ 1\)/.test(drawer)) missing.push('「接下来」段没有从当前曲之后切');
+  if (!/qd-caption">接下来 · \{upcoming\.length\} 首/.test(drawer)) missing.push('「接下来」段没有带真实条数');
   if (!/scrollToIndex/.test(vl)) missing.push('VirtualList 未支持 scrollToIndex');
-  // 定位必须与"复位到顶"在同一处裁决，否则两者打架会让抽屉先闪到顶再跳下来
-  const iIdx = vl.indexOf('scrollToIndex == null');
-  const iReset = vl.indexOf('el.scrollTop = 0');
-  if (iIdx < 0 || iReset < 0) missing.push('定位与复位未在同一分支里裁决');
-  else if (iReset < iIdx) missing.push('把 scrollTop 归零写在了定位之前（顺序反了）');
   return { ok: missing.length === 0, detail: missing.length ? `播放列表定位：${missing.join('、')}` : '' };
 });
 add('QUEUE.heartbeatTitle', 'QUEUE', (s) => {
@@ -1608,9 +1954,9 @@ add('QUEUE.heartbeatTitle', 'QUEUE', (s) => {
   // 标题必须跟着变，否则左栏停在歌单上、抽屉里却是一批陌生的歌，两处对不上且无提示。
   const drawer = stripComments(s.queueDrawer ?? '');
   const missing = [];
-  if (!/isHeartbeat\s*\?\s*'心动模式'\s*:\s*'播放队列'/.test(drawer))
-    missing.push("QueueDrawer 标题未按心动模式切换（'心动模式' / '播放队列'）");
-  if (!/playMode\s*===\s*'heartbeat'/.test(drawer)) missing.push('QueueDrawer 未判当前是否心动模式');
+  // 设计稿不换标题，把模式放进副标题：`<N 首> · <模式>`，模式名取自单一事实源 `playModeLabel`
+  if (!/playModeLabel\(playMode\)/.test(drawer)) missing.push('副标题没有带上播放模式（心动模式下拉不出 心动模式）');
+  if (!/queue\.length\} 首/.test(drawer)) missing.push('副标题没有带队列条数');
   // 必须由 store 的 playMode 驱动，不能写死
   if (!/useMusicStore\(\s*\(s\)\s*=>\s*s\.playMode\s*\)/.test(drawer))
     missing.push('QueueDrawer 未从 store 取 playMode（标题会变成写死值）');
@@ -1619,16 +1965,19 @@ add('QUEUE.heartbeatTitle', 'QUEUE', (s) => {
 add('QUEUE.drawerSlidesIn', 'QUEUE', (s) => {
   // 需求第 5 条：播放列表以抽屉形式**从右往左展开**。
   const css = s.css;
-  const rule = (css.match(/\.music-drawer\s*\{([^}]*)\}/) || [, ''])[1];
+  // 设计稿的进场是 `ui-drawer-in`：位移 24px + 从 .6 淡入（不是横穿一屏的 100% → 0）
+  const rule = (css.match(/\.ui-drawer\s*\{([^}]*)\}/) || [, ''])[1];
   const missing = [];
-  if (!/animation\s*:\s*music-drawer-in/.test(rule)) missing.push('抽屉没有进场动画');
-  const kf = (css.match(/@keyframes\s+music-drawer-in\s*\{([\s\S]*?)\n\}/) || [, ''])[1];
-  if (!/translateX\(100%\)/.test(kf)) missing.push('起点不是 translateX(100%)（不会从右往左滑出）');
-  if (!/translateX\(0\)/.test(kf)) missing.push('终点不是 translateX(0)');
+  if (!/animation\s*:\s*ui-drawer-in/.test(rule)) missing.push('抽屉没有进场动画');
+  const kf = (css.match(/@keyframes\s+ui-drawer-in\s*\{([\s\S]*?)\n\}/) || [, ''])[1];
+  if (!/translateX\(24px\)/.test(kf)) missing.push('起点不是 translateX(24px)（设计稿只滑一小段）');
+  if (!/opacity:\s*0\.6/.test(kf)) missing.push('起点没有从 .6 淡入');
+  if (!/transform:\s*none|translateX\(0\)/.test(kf))
+    missing.push('终点没有回到原位（translateX(0) / transform: none）');
   // 蒙层**不能**跟着平移（整屏遮罩横移会露出下面的界面），只能淡入
-  const bd = (css.match(/\.music-drawer-bd\s*\{([^}]*)\}/) || [, ''])[1];
+  const bd = (css.match(/\.ui-drawer-mask\s*\{([^}]*)\}/) || [, ''])[1];
   if (/translateX/.test(bd)) missing.push('蒙层也跟着平移了（遮罩横移会露出底下的界面）');
-  if (!/animation\s*:\s*music-drawer-bd-in/.test(bd)) missing.push('蒙层没有淡入动画');
+  if (!/animation\s*:\s*miao-fade-in/.test(bd)) missing.push('蒙层没有淡入动画');
   return { ok: missing.length === 0, detail: missing.length ? `队列抽屉展开：${missing.join('、')}` : '' };
 });
 
@@ -2560,7 +2909,12 @@ add('LYRICS.showTranslationWired', 'LYRICS', (s) => {
   const island = stripComments(s.island ?? '');
   const missing = [];
   if (!exp) missing.push('未读到 ExpandedPlayer.tsx');
-  else if (!/showTranslation/.test(exp)) missing.push('ExpandedPlayer 未给 KaraokeLyrics 传 showTranslation');
+  // ver3：翻译显隐由「译」开关控制（设计稿 `.xp-tab-tools` 的 chip），
+  // 所以接线判据是「传给 KaraokeLyrics 的是那个 state」+「真的有一个能翻转它的开关」。
+  // 只写 `showTranslation` 一词不够：把它写死成 `{false}` 也照样命中，那是假绿。
+  else if (!/showTranslation=\{showTranslation\}/.test(exp))
+    missing.push('ExpandedPlayer 未把「译」开关的 state 传给 KaraokeLyrics');
+  else if (!/setShowTranslation\(/.test(exp)) missing.push('ExpandedPlayer 没有能翻转译文显隐的开关');
   if (!island) missing.push('未读到 DynamicIsland.tsx');
   else {
     // 灵动岛的 KaraokeLyrics 调用片段不得出现 showTranslation
@@ -3125,9 +3479,10 @@ add('ISLANDV.ctlStableAcrossViews', 'ISLANDV', (s) => {
 add('ISLANDV.cardSize', 'ISLANDV', (s) => {
   const isl = islSrc(s);
   const missing = [];
-  // 歌词卡与大卡共用同一组常量（320×150）：另立一套尺寸会让 hover 收展的形变对不上
-  if (!/const EXPANDED_WIDTH = 320;/.test(isl)) missing.push('展开宽不是 320');
-  if (!/const MUSIC_EXPANDED_HEIGHT = 150;/.test(isl)) missing.push('音乐卡展开高不是 150');
+  // 歌词卡与大卡共用同一组常量（350×160，按设计稿 `.island[data-state="card"]`）：
+  // 另立一套尺寸会让 hover 收展的形变对不上
+  if (!/const EXPANDED_WIDTH = 350;/.test(isl)) missing.push('展开宽不是 350');
+  if (!/const MUSIC_EXPANDED_HEIGHT = 160;/.test(isl)) missing.push('音乐卡展开高不是 160');
   // 高度分支必须仍取这个常量（常量改了而计算式没跟上、或反过来，都会给出第三个尺寸）
   if (!/\? MUSIC_EXPANDED_HEIGHT/.test(isl)) missing.push('音乐卡展开高度不再取 MUSIC_EXPANDED_HEIGHT');
   return { ok: missing.length === 0, detail: missing.length ? `歌词卡尺寸：${missing.join('、')}` : '' };
@@ -3178,8 +3533,11 @@ add('ISLANDV.desktopLyricsKept', 'ISLANDV', (s) => {
   if (!hasMethodImpl(store, 'pushLyricsState')) missing.push('store 的 pushLyricsState 实现没了');
   if (!/\bdesktopLyricsFontSize\b/.test(store)) missing.push('desktopLyrics* 偏好没了');
   if (!/export const openLyricsWindow\b/.test(stripComments(s.ipc ?? ''))) missing.push('ipc 的 openLyricsWindow 没了');
-  // 主窗侧唯一的窗口入口（设置页那一项与它共用同一个 store action）
-  if (!/lyricsWindowOpen \? '关闭桌面歌词' : '桌面歌词'/.test(stripComments(s.playerBar ?? '')))
+  // 主窗侧唯一的窗口入口（设置页那一项与它共用同一个 store action）。
+  // 判据锚点按设计稿改成固定 title「桌面歌词窗口」+ 真的接了 `setLyricsWindowOpen`：
+  // 只要这个开关还在且能开合，本组要防的"提前删桌面歌词"就没发生。
+  const playerBar = stripComments(s.playerBar ?? '');
+  if (!/title="桌面歌词窗口"/.test(playerBar) || !/setLyricsWindowOpen\(/.test(playerBar))
     missing.push('PlayerBar 的桌面歌词开关没了');
   return { ok: missing.length === 0, detail: missing.length ? `桌面歌词仍在（未提前删）：${missing.join('、')}` : '' };
 });
@@ -3312,10 +3670,10 @@ add('RESTORE.restoringClosed', 'RESTORE', (s) => {
   if (!/set\(\{\s*isPlaying:\s*false,\s*restoring:\s*false\s*\}\)/.test(store)) {
     missing.push('playSong 的 URL 解析抛错路径没有关闸（该路径 playUrl 永不设置，没有 loadedmetadata 来关）');
   }
-  if (occurrences(store, 'get().clearQueue();\n            set({ restoring: false });') < 1) {
+  if (occurrences(store, 'get().clearQueue(true);\n            set({ restoring: false });') < 1) {
     missing.push('恢复中队列只剩一首歌且它也失败时没有关闸（没有"下一首"可跳）');
   }
-  if (occurrences(store, 'get().clearQueue();\n    set({ restoring: false });') < 1) {
+  if (occurrences(store, 'get().clearQueue(true);\n    set({ restoring: false });') < 1) {
     missing.push('整条队列都试完时没有关闸');
   }
   if (!/finishRestore/.test(kernel)) missing.push('kernel 没有在加载成功时调 finishRestore');
@@ -3361,7 +3719,8 @@ add('RESTORE.skipLimitRestoring', 'RESTORE', (s) => {
   }
   if (!/if\s*\(!restoring\)\s*get\(\)\.toast\(/.test(store))
     missing.push('恢复态仍在弹「无版权已跳过」提示（用户还没操作，是噪音）');
-  if (!/restoring[\s\S]{0,400}clearQueue\(\)/.test(store)) missing.push('恢复态遍历完没有清空队列（播放条不会隐藏）');
+  if (!/restoring[\s\S]{0,400}clearQueue\(true\)/.test(store))
+    missing.push('恢复态遍历完没有清空队列（播放条不会隐藏）');
   if (!hasMethodImpl(store, 'handleRestoreFailed')) missing.push('handleRestoreFailed 实现没了');
   return { ok: missing.length === 0, detail: missing.length ? missing.join('、') : '' };
 });
@@ -3714,8 +4073,21 @@ const hostOnPlay = (id, key, min) =>
         : `${key}：onClick={play} ${nClick} 处 / onPlay={play} ${nPlay} 处（应 ≥${min} 且两者相等 —— 少一处就是右键「播放」与左键点击不是一个语义）`,
     };
   });
-hostOnPlay('left', 'leftPanel', 1); // 歌单曲目
-hostOnPlay('right', 'rightPanel', 3); // 搜索结果 / 榜单曲目 / 每日推荐 —— 三处逐一接
+/*
+ * 歌单曲目的宿主（左键点击与右键「播放」必须是同一个回调）。
+ *
+ * ⚠️ 判据对象随交互改了：设计稿里"点歌单 → 右侧出曲目"，所以这个宿主
+ * 从 `LeftPanel.tsx` 换成了 `PlaylistDetail.tsx` —— 断言守的是
+ * "两个入口同一个语义"这个事实，不是"它住在哪个文件里"。
+ */
+hostOnPlay('left', 'playlistDetail', 1); // 歌单曲目（同时承载榜单 / 每日推荐）
+/*
+ * ⚠️ 从 3 处降为 1 处：原先是"搜索结果 / 榜单曲目 / 每日推荐"三处，
+ * 后两者已统一到 `PlaylistDetail`（榜单走 openLeftPlaylist、每日推荐走 openTracksDetail），
+ * 各自的独立曲目视图（RightTracksView / DailyView）已删除。
+ * 所以 RightPanel 里现在只剩**搜索结果**这一处宿主。
+ */
+hostOnPlay('right', 'rightPanel', 1); // 搜索结果
 hostOnPlay('local', 'localView', 1); // 本地曲库
 hostOnPlay('history', 'historyView', 1); // 播放历史
 
@@ -4228,7 +4600,7 @@ const MUTATIONS = [
   {
     name: '把 kugou 项从 PLATFORMS 里去掉',
     file: F.platform,
-    find: "  { id: 'kugou', label: '酷狗音乐', short: '酷', color: '#00A0E9', desc: '千万曲库 · 高品质音效' },\n",
+    find: "  { id: 'kugou', label: '酷狗音乐', short: '酷', color: '#6E97B9', desc: '千万曲库 · 高品质音效' },\n",
     replace: '',
     expect: ['PLATFORM.list'],
   },
@@ -4291,10 +4663,169 @@ const MUTATIONS = [
     expect: ['UI.virtualList'],
   },
   {
-    name: '把 QueueDrawer 的虚拟列表换回普通列表（模拟漏接某个长列表）',
-    file: path.join(F.musicUiDir, 'QueueDrawer.tsx'),
+    name: '把榜单节外面重新套一层裸 div（多一层、节间距与层级不对）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: '      <Charts />',
+    replace: '      <div id="music-charts"><Charts /></div>',
+    expect: ['UI.viewSections'],
+  },
+  {
+    name: '把推荐歌单的 .mc-section 容器摘掉（节头直接挂在视图下）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: '<div className="mc-section">\n          <div className="mc-section-head">\n            <span className="music-card-title">推荐歌单</span>',
+    replace: '<div className="mc-section-head">\n            <span className="music-card-title">推荐歌单</span>',
+    expect: ['UI.viewSections'],
+  },
+  {
+    name: '把推荐歌单从封面卡网格退回列表行（推荐位的图没了）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: 'className="card-grid"',
+    replace: 'className="music-list"',
+    expect: ['UI.playlistCards'],
+  },
+  {
+    name: '把今日精选的表头摘掉（用户要自己猜第二列是专辑还是歌手）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: 'className="song-head"',
+    replace: 'className="song-head-gone"',
+    expect: ['UI.songTable'],
+  },
+  {
+    name: '把播放条的毛玻璃摘掉（退回一张普通白卡）',
+    file: F.musicScss,
+    /* ⚠️ 锚点要连 `-webkit-backdrop-filter` 那行一起改：只改标准属性时，
+       前缀那行仍带 blur(20px)，断言的 blur 检查照样满足 ⇒ 假反证（实测踩过）。 */
+    find: '  backdrop-filter: blur(20px) saturate(1.3);\n  -webkit-backdrop-filter: blur(20px) saturate(1.3);',
+    replace: '  backdrop-filter: none;\n  -webkit-backdrop-filter: none;',
+    expect: ['UI.playerBarGlass'],
+  },
+  {
+    name: '把榜单卡的排行改成写死的假数据（设计稿是演示数据，产品必须接真数据）',
+    file: path.join(F.musicUiDir, 'Charts.tsx'),
+    // 榜单卡改版后这里多了 `.slice(0, 3)`（只显示前 3 名），锚点随之更新
+    find: 'const rows = (pl.preview ?? []).slice(0, 3);',
+    replace: "const rows = [{ title: '示例歌名', artist: '示例歌手' }];",
+    expect: ['UI.chartGrid'],
+  },
+  {
+    name: '把节头的轻动作键换回带底色的 music-btn（节头比标题还重）',
+    file: path.join(F.musicUiDir, 'Charts.tsx'),
+    find: 'className="link-btn"',
+    replace: 'className="music-btn out"',
+    expect: ['UI.sectionLinkBtn'],
+  },
+  {
+    name: '把 preview 条数从 5 改成 3（设计稿卡里是 5 行）',
+    file: path.join(APP, 'src', 'modules', 'music', 'actions', 'right.ts'),
+    find: 'const CHART_PREVIEW_N = 5;',
+    replace: 'const CHART_PREVIEW_N = 3;',
+    expect: ['UI.chartCardPreview'],
+  },
+  {
+    name: '把首页的一节改回旧类名 music-sec（节间距 20 静默失效）',
+    file: path.join(F.musicUiDir, 'Charts.tsx'),
+    find: 'className="mc-section"',
+    replace: 'className="music-sec"',
+    expect: ['UI.sectionHeadClass'],
+  },
+  {
+    name: '把节头改回 music-card-hd（与 .mc-section-head 两套叫法并存）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: 'className="mc-section-head"',
+    replace: 'className="music-card-hd"',
+    expect: ['UI.sectionHeadClass'],
+  },
+  {
+    name: '把搜索中改回光秃秃的「搜索中…」（不说搜的是哪个平台）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    find: '<Empty sub="搜索结果会同时出现歌曲与专辑">正在搜索 {providerLabel(searchProvider)}…</Empty>',
+    replace: '<Empty>搜索中…</Empty>',
+    expect: ['SEARCH.inProgressCopy'],
+  },
+  {
+    name: '把队列空态的 toast 摘掉（按播放键静默无反应，像按钮坏了）',
+    file: F.musicActionsPlayback,
+    find: "      get().toast('播放队列是空的', 'warning', '从首页或搜索里挑一首歌吧');",
+    replace: '',
+    expect: ['QUEUE.emptyToastCopy'],
+  },
+  {
+    name: '把搜索源胶囊挪回视图壳（首页/榜单页也一直挂着它）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    /*
+     * 锚点取视图分流的**第一行**。分流已从一行三元改成多行三元（多了歌单详情与本地两级），
+     * 所以 `{searchActive ? <SearchResults /> : <Discover />}` 这行已经不存在了 ——
+     * 换成 `{searchActive ? (`。它只会出现一次，且替换后胶囊真的挂到了视图壳上。
+     */
+    find: '        {searchActive ? (',
+    replace: '        <SearchCaps />\n        {searchActive ? (',
+    expect: ['UI.searchSourcesInResults'],
+  },
+  {
+    name: '搜索结果里摘掉搜索源胶囊（用户搜完才发现选错平台，无法当场换）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    /*
+     * 破坏点：把**无结果**这条分支里的 `<SearchCaps />` 换成别的元素。
+     *
+     * ⚠️ 三类"看起来能用"的锚点都不成立，记下来免得下次再试：
+     *   · `all: true` —— 本执行器不支持（只有单次 `txt.replace`）；
+     *   · 改函数名（`SearchCaps` → `SearchCapsGone`、`SearchResults` → `SearchResultsGone`）——
+     *     断言用的是 `indexOf('function SearchResults')` / `/<SearchCaps\s*\/>/`，
+     *     改名后**前缀仍然命中**，等于没改；
+     *   · 单写 `<SearchCaps />` —— 全文出现 3 次，`replace` 只换第一处，
+     *     而第一处是"搜索中"分支，断言数的是总数（3 → 3 之外还要 3 处分布），不一定红。
+     * 所以用一条只会命中一次、且会真的减少一处胶囊的锚点：无结果分支里
+     * 「胶囊 + 那句空态」这一对（`art` 是后来加的，注释也在它们之间）。
+     */
+    find: '        <SearchCaps />\n        <Empty art sub="试试更短的关键词，或切换搜索源。">',
+    replace: '        <Empty art sub="试试更短的关键词，或切换搜索源。">',
+    expect: ['UI.searchSourcesInResults'],
+  },
+  {
+    name: '在视图里加回 .music-rightbody 包裹层（多一层，滚动与高度链要重算）',
+    file: path.join(F.musicUiDir, 'RightPanel.tsx'),
+    /*
+     * 锚点是视图分流的**第一行**。分流已从一行三元改成多行三元（多了歌单详情与本地两级），
+     * 所以取 `{searchActive ? (` 这一行 —— 它只会出现一次，且包住整个分流。
+     */
+    find: '        {searchActive ? (',
+    replace: '        <div className="music-rightbody">{searchActive ? (',
+    expect: ['UI.noCenterWrapper'],
+  },
+  {
+    name: '把左栏歌单列表的分组拆掉（退回"一条扁平行表"）',
+    file: path.join(F.musicUiDir, 'LeftPanel.tsx'),
+    /*
+     * 组头从 `<div className="ms-caption">` 改成了可折叠的 `<button>`（#16），
+     * 但分组容器 `.ms-group` 仍是普通 div —— 所以这条锚点仍然有效，只更新注释。
+     */
+    find: 'className="ms-group"',
+    replace: 'className="ms-flat"',
+    expect: ['UI.sideGroups'],
+  },
+  {
+    name: '把左栏组内空态换成通用 Empty（会占满高度，把组头挤走）',
+    file: path.join(F.musicUiDir, 'LeftPanel.tsx'),
+    find: 'className="ms-empty"',
+    replace: 'className="ui-empty"',
+    expect: ['UI.sideGroups'],
+  },
+  {
+    name: '把歌单曲目列表的虚拟滚动摘掉（上千首会卡）',
+    file: path.join(F.musicUiDir, 'PlaylistDetail.tsx'),
     find: '<VirtualList',
+    replace: '<TrackList',
+    expect: ['UI.leftTracksVirtual'],
+  },
+  {
+    name: '把 QueueDrawer 的虚拟列表换回普通列表（模拟漏接某个长列表）',
+
+    file: path.join(F.musicUiDir, 'QueueDrawer.tsx'),
+
+    find: '<VirtualList',
+
     replace: '<QueueList',
+
     expect: ['UI.virtualListUsed'],
   },
   {
@@ -4746,10 +5277,10 @@ const MUTATIONS = [
     expect: ['HEARTBEAT.restoresQueueOnLeave'],
   },
   {
-    name: '抽屉标题写死"播放队列"（心动模式下与左栏歌单对不上且无提示）',
+    name: '抽屉副标题不写模式（心动模式下与左栏歌单对不上且无提示）',
     file: F.queueDrawer,
-    find: "          <span className=\"music-card-title\">{isHeartbeat ? '心动模式' : '播放队列'}</span>",
-    replace: '          <span className="music-card-title">播放队列</span>',
+    find: 'subtitle={`${queue.length} 首 · ${playModeLabel(playMode)}`}',
+    replace: 'subtitle={`${queue.length} 首`}',
     expect: ['QUEUE.heartbeatTitle'],
   },
 
@@ -4814,39 +5345,46 @@ const MUTATIONS = [
   },
   {
     name: 'likedHeartbeatOn 不落偏好（重启就丢"开启过心动"这件事）',
-    file: path.join(APP, 'src', 'music', 'prefs.ts'),
+    file: path.join(APP, 'src', 'modules', 'music', 'prefs.ts'),
     find: '  likedHeartbeatOn: boolean;',
     replace: '  likedHeartbeatOnRemoved?: boolean;',
     expect: ['PLAYLIST.likedAutoHeartbeat'],
   },
 
-  // ── QUEUE 播放列表抽屉（定位当前曲 + 从右滑入）──────────────────────
+  // ── QUEUE 播放列表抽屉（当前曲常驻顶部 + 从右滑入）──────────────────
   {
-    name: '队列抽屉不把当前下标交给列表（打开时不定位到正在播的那首）',
+    name: '队列抽屉不再把「正在播放」段固定在顶部（当前曲被混进滚动列表）',
     file: F.queueDrawer,
-    find: 'scrollToIndex={currentIndex}',
-    replace: 'data-no-scroll',
+    find: '<p className="qd-caption">正在播放</p>',
+    replace: '<p className="qd-caption">队列</p>',
+    expect: ['QUEUE.scrollsToCurrent'],
+  },
+  {
+    name: '「接下来」段从队首切起（把正在播的那首也算进接下来）',
+    file: F.queueDrawer,
+    find: 'queue.slice(currentIndex + 1)',
+    replace: 'queue.slice(0)',
     expect: ['QUEUE.scrollsToCurrent'],
   },
   {
     name: '抽屉进场动画删掉（不再从右往左展开）',
-    file: F.musicScss,
-    find: '  animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;',
+    file: F.componentsScss,
+    find: '  animation: ui-drawer-in var(--miao-dur-base) var(--miao-ease-out);',
     replace: '',
     expect: ['QUEUE.drawerSlidesIn'],
   },
   {
     name: '抽屉进场起点改成从下方（不再是"从右往左"）',
-    file: F.musicScss,
-    find: 'transform: translateX(100%);',
-    replace: 'transform: translateY(100%);',
+    file: F.componentsScss,
+    find: '    transform: translateX(24px);',
+    replace: '    transform: translateY(24px);',
     expect: ['QUEUE.drawerSlidesIn'],
   },
   {
     name: '让蒙层也跟着抽屉平移（整屏遮罩横移会露出底下界面）',
-    file: F.musicScss,
-    find: '  animation: music-drawer-bd-in 0.24s ease-out both;',
-    replace: '  animation: music-drawer-in 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;',
+    file: F.componentsScss,
+    find: '  animation: miao-fade-in var(--miao-dur-fast) var(--miao-ease-out);',
+    replace: '  transform: translateX(24px);\n  animation: miao-fade-in var(--miao-dur-fast) var(--miao-ease-out);',
     expect: ['QUEUE.drawerSlidesIn'],
   },
 
@@ -4986,14 +5524,14 @@ const MUTATIONS = [
   },
   {
     name: '让 isWirable 不再检查 CORS 模式（非 CORS 元素也会被接管）',
-    file: 'src/music/audioGraph.ts',
+    file: 'src/modules/music/audioGraph.ts',
     find: "  return el.crossOrigin === 'anonymous';",
     replace: '  return true;',
     expect: ['AUDIO.refuseNonCors'],
   },
   {
     name: '去掉 gain → destination 的连接（接管即静音）',
-    file: 'src/music/audioGraph.ts',
+    file: 'src/modules/music/audioGraph.ts',
     find: '      gain.connect(ctx.destination); // 唯一出口：不接回 destination = 静音',
     replace: '      void gain; // 反证：不接回出口',
     expect: ['AUDIO.connectDestination'],
@@ -5192,7 +5730,7 @@ const MUTATIONS = [
   },
   {
     name: '从音频图里去掉 GainNode（音量退回依赖元素 volume，部分平台会失效）',
-    file: 'src/music/audioGraph.ts',
+    file: 'src/modules/music/audioGraph.ts',
     find: '    gain = gain ?? ctx.createGain();',
     replace: '    gain = gain ?? null;',
     expect: ['AUDIO.connectDestination'],
@@ -5206,10 +5744,8 @@ const MUTATIONS = [
   },
   {
     name: '把播放队列的 z-index 降回展开播放器之下（点「播放队列」看不到东西）',
-    file: F.musicScss,
-    // 锚点收窄到那一行本身：抽屉里后来插入了进场动画的注释与声明，
-    // 原先"跨到右花括号"的三行锚点会静默失效（跳过 ≠ 通过）
-    find: '  z-index: 72;',
+    file: F.componentsScss,
+    find: '  z-index: 92;',
     replace: '  z-index: 60;',
     expect: ['UI.drawerAboveExpanded'],
   },
@@ -5366,30 +5902,10 @@ const MUTATIONS = [
   {
     name: 'QueueDrawer 把菜单状态挪到早退之后（顺序随行数变）',
     file: F.queueDrawer,
-    find:
-      '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);\n' +
-      '  const queueOpen = useMusicStore((s) => s.queueOpen);\n' +
-      '  const queue = useMusicStore((s) => s.queue);\n' +
-      '  const currentIndex = useMusicStore((s) => s.currentIndex);\n' +
-      '  const playMode = useMusicStore((s) => s.playMode);\n' +
-      '  const playSong = useMusicStore((s) => s.playSong);\n' +
-      '  const playNext = useMusicStore((s) => s.playNext);\n' +
-      '  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n' +
-      '  const clearQueue = useMusicStore((s) => s.clearQueue);\n' +
-      '  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);\n' +
-      '\n  if (!queueOpen) return null;\n',
+    find: '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);',
     replace:
-      '  const queueOpen = useMusicStore((s) => s.queueOpen);\n' +
-      '  const queue = useMusicStore((s) => s.queue);\n' +
-      '  const currentIndex = useMusicStore((s) => s.currentIndex);\n' +
-      '  const playMode = useMusicStore((s) => s.playMode);\n' +
-      '  const playSong = useMusicStore((s) => s.playSong);\n' +
-      '  const playNext = useMusicStore((s) => s.playNext);\n' +
-      '  const removeFromQueue = useMusicStore((s) => s.removeFromQueue);\n' +
-      '  const clearQueue = useMusicStore((s) => s.clearQueue);\n' +
-      '  const setQueueOpen = useMusicStore((s) => s.setQueueOpen);\n' +
-      '\n  if (!queueOpen) return null;\n' +
-      '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);\n',
+      '  if (!queueOpen) return null;\n' +
+      '  const [menu, setMenu] = useState<{ x: number; y: number; song: Song } | null>(null);',
     expect: ['MENU.queueRow'],
   },
   {
@@ -5403,14 +5919,14 @@ const MUTATIONS = [
   // ── ISLANDV 灵动岛第 4 态（歌词卡）──────────────────────────────────────
   {
     name: 'islandView 的默认值改成 lyrics（首次使用就落在歌词卡）',
-    file: 'src/music/store.ts',
+    file: 'src/modules/music/store.ts',
     find: "  islandView: 'play',\n",
     replace: "  islandView: 'lyrics',\n",
     expect: ['ISLANDV.pref.default'],
   },
   {
     name: 'IslandView 放宽成 string（localStorage 里的脏值能一路流到渲染层）',
-    file: 'src/music/store.ts',
+    file: 'src/modules/music/store.ts',
     find: "export type IslandView = 'play' | 'lyrics';",
     replace: 'export type IslandView = string;',
     expect: ['ISLANDV.pref.type'],
@@ -5479,10 +5995,10 @@ const MUTATIONS = [
     expect: ['ISLANDV.toggleBothWays'],
   },
   {
-    name: '歌词卡另立高度（大卡常量被改成 170，形变对不上）',
+    name: '歌词卡另立高度（大卡常量被改成 180，形变对不上）',
     file: F.island,
-    find: 'const MUSIC_EXPANDED_HEIGHT = 150;',
-    replace: 'const MUSIC_EXPANDED_HEIGHT = 170;',
+    find: 'const MUSIC_EXPANDED_HEIGHT = 160;',
+    replace: 'const MUSIC_EXPANDED_HEIGHT = 180;',
     expect: ['ISLANDV.cardSize'],
   },
   {
@@ -5929,10 +6445,10 @@ const MUTATIONS = [
     expect: ['LYRICS.artistLine'],
   },
   {
-    name: '删掉展开播放器给 KaraokeLyrics 传的 showTranslation（详情页不显示翻译）',
+    name: '把「译」开关写死成 false（详情页永远不显示翻译）',
     file: F.expanded,
-    find: 'showTranslation',
-    replace: '',
+    find: 'showTranslation={showTranslation}',
+    replace: 'showTranslation={false}',
     expect: ['LYRICS.showTranslationWired'],
   },
   // ---- D-56 新增 4 条断言的反证：每条破坏对应机制，必须变红 ----

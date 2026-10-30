@@ -26,8 +26,10 @@ export function Toast() {
 
   useEffect(() => {
     if (!musicToast) return;
-    // 音乐模块的 type 是 success | warning，对应全局通道的 good | bad
-    toastBus.push(musicToast.message, musicToast.type === 'success' ? 'good' : 'bad');
+    // 三种语义 → 全局通道的对应色（success→good / warning→bad / info→info）
+    const kind = musicToast.type === 'success' ? 'good' : musicToast.type === 'info' ? 'info' : 'bad';
+    // `sub` 原样透传：设计稿的两行 toast（标题 + 说明）在这里接上总线
+    toastBus.push(musicToast.message, kind, musicToast.sub);
     clearToast();
   }, [musicToast, clearToast]);
 

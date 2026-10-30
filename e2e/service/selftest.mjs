@@ -2,7 +2,7 @@
 //
 // 运行：node e2e/service/selftest.mjs
 // 原则：每个断言都对应契约里的一条明文规则，断言失败即契约不符合。
-// 全部 I/O 落在临时目录（MIAO_ROOT / MIAO_STATE_DIR），不触碰用户真实图片目录。
+// 全部 I/O 落在临时目录（MIAO_MANGA_ROOT_DIR / MIAO_MANGA_STATE_DIR），不触碰用户真实图片目录。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -264,8 +264,8 @@ async function portSegmentTests() {
   const probe = spawnProc(
     SERVICE_ENTRY,
     {
-      MIAO_ROOT: path.join(TMP, 'root-probe'),
-      MIAO_STATE_DIR: path.join(TMP, 'state-probe'),
+      MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root-probe'),
+      MIAO_MANGA_STATE_DIR: path.join(TMP, 'state-probe'),
       MIAO_TOKEN: TOKEN,
     },
     'service-probe',
@@ -291,8 +291,8 @@ async function portSegmentTests() {
   const full = spawnProc(
     SERVICE_ENTRY,
     {
-      MIAO_ROOT: path.join(TMP, 'root-full'),
-      MIAO_STATE_DIR: path.join(TMP, 'state-full'),
+      MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root-full'),
+      MIAO_MANGA_STATE_DIR: path.join(TMP, 'state-full'),
       MIAO_TOKEN: TOKEN,
     },
     'service-full',
@@ -346,8 +346,8 @@ try {
   service = spawnProc(
     SERVICE_ENTRY,
     {
-      MIAO_ROOT: rootDir,
-      MIAO_STATE_DIR: stateDir,
+      MIAO_MANGA_ROOT_DIR: rootDir,
+      MIAO_MANGA_STATE_DIR: stateDir,
       MIAO_TOKEN: TOKEN,
       MIAO_ENGINE_PORT: String(eng.port),
     },
@@ -1072,12 +1072,12 @@ try {
     );
     if (traversal.status === 201) await waitTask(port, TOKEN, traversal.json.taskId);
 
-    // 根目录黑名单：另起一个进程，MIAO_ROOT=/tmp
+    // 根目录黑名单：另起一个进程，MIAO_MANGA_ROOT_DIR=/tmp
     const bad = spawnProc(
       SERVICE_ENTRY,
       {
-        MIAO_ROOT: '/tmp',
-        MIAO_STATE_DIR: path.join(TMP, 'state-bad'),
+        MIAO_MANGA_ROOT_DIR: '/tmp',
+        MIAO_MANGA_STATE_DIR: path.join(TMP, 'state-bad'),
         MIAO_TOKEN: TOKEN,
       },
       'service-bad-root',
@@ -1532,8 +1532,8 @@ try {
     check('A20 前置：假引擎就绪（/ready 答 200，/translate 永不回应）', fakePort > 0, fakePort);
 
     const g12Env = {
-      MIAO_ROOT: g12Root,
-      MIAO_STATE_DIR: g12State,
+      MIAO_MANGA_ROOT_DIR: g12Root,
+      MIAO_MANGA_STATE_DIR: g12State,
       MIAO_TOKEN: TOKEN,
       MIAO_ENGINE_PORT: String(fakePort),
       MIAO_ENGINE_TIMEOUT_MS: '700',
@@ -1711,80 +1711,90 @@ try {
   // ================================================================ A21 落盘根目录可写性（契约 §2.2 DISK_FULL）
   // §2.2 要求「创建任务前探测一次根目录可写性；不可写 → 507 DISK_FULL」。这一段把它钉住，
   // 并且双向钉住 —— 因为「507」的文案是「**磁盘满或权限不足**」，那是一句会让人去清磁盘的话：
-  //   ① 真的文件系统错误（带 errno）→ 必须是 507，且原因要带得出来；
+  //   ① 真的文件系统错误 → 必须是 507，且原因要带得出来；
   //   ② **不带 errno** 的错误（来自别处，不是文件系统）→ **不得**伪装成 507。
   // ② 不是假想的：本机实测踩过一次 —— 运行时策略层拦下一次探测写入，磁盘明明还剩 58 GB，
   // 服务却回了一句 507 DISK_FULL，而 details 里连个 errno 都没有，完全无从判断。
+  //
+  // 🔴 **2026-10-30 重写**（旧版在 Windows 上恒红，且 ② 组从未生效）：
+  //   · ① 靠 `fs.chmodSync(roRoot, 0o500)` 造"不可写"——POSIX mode **对目录不生效**，
+  //     Windows 更是完全不用它拦写 ⇒ 探测照常成功、任务照常创建（201），断言恒红。
+  //     现在改成：能真造不可写就造（POSIX），造不出就**显式跳过并打印原因**（跳过 ≠ 通过）。
+  //   · ② 靠 `NODE_OPTIONS=--import` 挂 Node 钩子——F5 起服务靶子是 `mangasvc` 二进制，
+  //     Node 钩子根本不加载 ⇒ 这四条从 F5 起就恒红。现在走 Rust 侧原生反证开关
+  //     `MIAO_PROBE_NO_ERRNO=1`（`handlers.rs::assert_root_writable`）。
   console.log('A21 落盘根目录可写性：真 fs 错误 → 507；非文件系统错误不得伪装成 507');
   {
-    // ---- ① 根目录只读 → 507 DISK_FULL，且 details.reason 必须带得出原因 ----
+    // ---- ① 根目录不可写 → 507 DISK_FULL，且 details.reason 必须带得出原因 ----
+    // POSIX：`chmod 0o500` 真的去掉了写位（root 用户除外 —— 那时也跳过）。
+    // Windows：POSIX mode 不拦目录写入，跳过并说明（不冒充通过）。
     const roRoot = path.join(TMP, 'ro-root');
-    const roSvc = spawnProc(
-      SERVICE_ENTRY,
-      {
-        MIAO_ROOT: roRoot,
-        MIAO_STATE_DIR: path.join(TMP, 'ro-state'),
-        MIAO_TOKEN: TOKEN,
-        MIAO_ENGINE_PORT: String(eng.port),
-      },
-      'service-ro',
-    );
-    try {
-      const roPort = (await waitReady(roSvc)).port;
-      fs.chmodSync(roRoot, 0o500); // 去掉写位：这是 spec-notes D-10 一直在用的可注入条件
-      const res = await submit(roPort, TOKEN, 'A21 只读', [
-        { filename: '001.png', contentType: 'image/png', data: pngBytes(40, 60, 31) },
-      ]);
-      const body = res.json; // 注意：不是 json(res) —— submit 返回的是 {status, json, raw}
-      check('A21 根目录不可写 → 507 DISK_FULL（§2.2）', res.status === 507 && body?.error?.code === 'DISK_FULL', {
-        status: res.status,
-        body,
-      });
-      check(
-        'A21 details.reason 带得出 errno —— 原先只回 err.code，遇到无 errno 的错误就成了「（undefined）」',
-        body?.error?.details?.reason === 'EACCES',
-        body?.error?.details,
+    const canMakeReadonly =
+      process.platform !== 'win32' && typeof process.getuid === 'function' && process.getuid() !== 0;
+    if (!canMakeReadonly) {
+      console.log(
+        `  ⊘ A21① 跳过：本平台（${process.platform}）无法用 POSIX 权限位造「目录不可写」` +
+          `（Windows 的只读属性不拦目录写入；root 无视权限位）—— 该路径需在 POSIX 非 root 环境下验收`,
       );
-      check(
-        'A21 探测失败不留 probe 残留文件',
-        !fs.readdirSync(roRoot).some((f) => f.startsWith('.write-probe-')),
-        fs.readdirSync(roRoot),
+    } else {
+      const roSvc = spawnProc(
+        SERVICE_ENTRY,
+        {
+          MIAO_MANGA_ROOT_DIR: roRoot,
+          MIAO_MANGA_STATE_DIR: path.join(TMP, 'ro-state'),
+          MIAO_TOKEN: TOKEN,
+          MIAO_ENGINE_PORT: String(eng.port),
+        },
+        'service-ro',
       );
-    } finally {
       try {
-        fs.chmodSync(roRoot, 0o700);
-      } catch {
-        /* ignore */
+        const roPort = (await waitReady(roSvc)).port;
+        fs.chmodSync(roRoot, 0o500);
+        const res = await submit(roPort, TOKEN, 'A21 只读', [
+          { filename: '001.png', contentType: 'image/png', data: pngBytes(40, 60, 31) },
+        ]);
+        const body = res.json; // 注意：不是 json(res) —— submit 返回的是 {status, json, raw}
+        check('A21 根目录不可写 → 507 DISK_FULL（§2.2）', res.status === 507 && body?.error?.code === 'DISK_FULL', {
+          status: res.status,
+          body,
+        });
+        /*
+         * `details.reason` 的来源是 `e.to_string()`（`handlers.rs::assert_root_writable`），
+         * 即整条 OS 错误串（Linux `Permission denied (os error 13)` / macOS `... (os error 1)`）。
+         * 旧断言写死 `=== 'EACCES'` 是照 Node 时代的 `err.code` 写的，早已不成立。
+         */
+        check(
+          'A21 details.reason 带得出原因（不是空串 / undefined）',
+          /permission|denied|os error (1|13|5)/i.test(String(body?.error?.details?.reason || '')),
+          body?.error?.details,
+        );
+        check(
+          'A21 探测失败不留 probe 残留文件',
+          !fs.readdirSync(roRoot).some((f) => f.startsWith('.write-probe-')),
+          fs.readdirSync(roRoot),
+        );
+      } finally {
+        try {
+          fs.chmodSync(roRoot, 0o700);
+        } catch {
+          /* ignore */
+        }
+        killProc(roSvc);
+        await sleep(200);
       }
-      killProc(roSvc);
-      await sleep(200);
     }
 
     // ---- ② 注入一个**刻意不带 errno** 的探测写入错误 → 必须是 500，不能是 507 ----
-    // 手段：`NODE_OPTIONS=--import` 给服务进程挂一个钩子，只让探测写入抛一个没有 code 的 Error。
-    // 这是唯一能稳定构造这个形状的办法 —— 真实环境里它由运行时策略层抛出，无法从外部按需触发。
-    const hook = path.join(TMP, 'inject-probe-error.mjs');
-    fs.writeFileSync(
-      hook,
-      [
-        "import fs from 'node:fs';",
-        'const orig = fs.writeFileSync;',
-        'fs.writeFileSync = function (p, ...rest) {',
-        "  if (String(p).includes('.write-probe-')) {",
-        "    throw new Error('injected: 写入被外部策略层拦下（刻意不带 errno）');",
-        '  }',
-        '  return orig.call(fs, p, ...rest);',
-        '};',
-      ].join('\n'),
-    );
+    // 手段：Rust 侧反证开关 `MIAO_PROBE_NO_ERRNO=1`（见 `handlers.rs::assert_root_writable`）。
+    // 为什么不能用 Node 钩子：服务靶子是 `mangasvc` 二进制，`NODE_OPTIONS=--import` 不加载。
     const injSvc = spawnProc(
       SERVICE_ENTRY,
       {
-        MIAO_ROOT: path.join(TMP, 'inj-root'),
-        MIAO_STATE_DIR: path.join(TMP, 'inj-state'),
+        MIAO_MANGA_ROOT_DIR: path.join(TMP, 'inj-root'),
+        MIAO_MANGA_STATE_DIR: path.join(TMP, 'inj-state'),
         MIAO_TOKEN: TOKEN,
         MIAO_ENGINE_PORT: String(eng.port),
-        NODE_OPTIONS: `--import ${pathToFileURL(hook).href}`,
+        MIAO_PROBE_NO_ERRNO: '1',
       },
       'service-inj',
     );
@@ -1816,8 +1826,8 @@ try {
     const down = spawnProc(
       SERVICE_ENTRY,
       {
-        MIAO_ROOT: path.join(TMP, 'root-down'),
-        MIAO_STATE_DIR: path.join(TMP, 'state-down'),
+        MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root-down'),
+        MIAO_MANGA_STATE_DIR: path.join(TMP, 'state-down'),
         MIAO_TOKEN: TOKEN,
         MIAO_SIDECAR_DOWN: '1',
         MIAO_PORT: '5179',
@@ -1846,8 +1856,8 @@ try {
       HARNESS,
       {
         MIAO_PORT: String(WATCH_PORT),
-        MIAO_ROOT: path.join(TMP, 'root-watch'),
-        MIAO_STATE_DIR: path.join(TMP, 'state-watch'),
+        MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root-watch'),
+        MIAO_MANGA_STATE_DIR: path.join(TMP, 'state-watch'),
         MIAO_TOKEN: TOKEN,
         MIAO_HARNESS_LOG: path.join(TMP, 'watch-service.log'),
       },

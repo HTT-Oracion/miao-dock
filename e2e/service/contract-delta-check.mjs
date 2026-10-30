@@ -459,8 +459,8 @@ async function assertUnavailable(port, label) {
 function baseEnv(port, extra = {}) {
   return {
     MIAO_PORT: String(port),
-    MIAO_ROOT: path.join(TMP, `root-${port}`),
-    MIAO_STATE_DIR: path.join(TMP, `state-${port}`),
+    MIAO_MANGA_ROOT_DIR: path.join(TMP, `root-${port}`),
+    MIAO_MANGA_STATE_DIR: path.join(TMP, `state-${port}`),
     MIAO_TOKEN: TOKEN,
     // 本脚本只关心契约面（错误码 / 字段），**不验 ③ 的生命周期**（那有自己的脚本）。
     // 默认退出预拉起，避免多个实例互抢 8080 —— 需要 `warmed=true` 的那个实例单独打开它。

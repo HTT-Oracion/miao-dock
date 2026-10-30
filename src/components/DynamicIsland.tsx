@@ -42,16 +42,16 @@ import { KaraokeLyrics } from '@screens/music/KaraokeLyrics';
  */
 
 /* ---- 尺寸常量：与参考实现逐值一致（30 / 200×30 / 320×150）---- */
-const CIRCLE_SIZE = 30;
-const MUSIC_COLLAPSED_WIDTH = 200;
-const MUSIC_COLLAPSED_HEIGHT = 30;
-const EXPANDED_WIDTH = 320;
-const MUSIC_EXPANDED_HEIGHT = 150;
+const CIRCLE_SIZE = 38;
+const MUSIC_COLLAPSED_WIDTH = 306;
+const MUSIC_COLLAPSED_HEIGHT = 46;
+const EXPANDED_WIDTH = 350;
+const MUSIC_EXPANDED_HEIGHT = 160;
 
-/** 形变（宽/高）时长 —— 必须与 music.scss `.di-capsule` 的 width/height transition 一致 */
-const MORPH_MS = 320;
-/** 淡入/淡出时长 —— 必须与 music.scss `.di-capsule` 的 transform/opacity 0.26s 一致 */
-const FADE_MS = 260;
+/** 形变（宽/高）时长 —— 必须与 music.scss `.di-capsule` 的 width/height transition 一致（设计稿 380ms 弹簧） */
+const MORPH_MS = 380;
+/** 淡入/淡出时长 —— 必须与 music.scss `.di-capsule` 的 transform/opacity 0.24s 一致 */
+const FADE_MS = 240;
 /** 波形柱数量（对齐参考实现折叠态的 5 根） */
 const WAVE_BARS = 5;
 
@@ -460,6 +460,10 @@ function MusicCard({
         )}
       </div>
 
+      {/* 眉标（设计稿 `.island-eyebrow`「NOW PLAYING」）：7px / .14em / faint。
+          它回答的是"这块东西在放什么"——没有它，胶囊里那两行字只能靠猜。 */}
+      <div className="di-eyebrow">NOW PLAYING</div>
+
       <div className="di-name">{song.name}</div>
 
       {/* 歌手行：歌名**正下方**，与歌名同属"共享元素"一族（绝对定位 + transform 补间）。
@@ -483,6 +487,22 @@ function MusicCard({
             style={real || !playing ? { height: `${Math.max(3, Math.round(v * 13))}px` } : undefined}
           />
         ))}
+      </div>
+
+      {/*
+        折叠态的两枚控制（设计稿 `.island-controls` 在 pill 态只留中间两枚：播放 + 下一首）。
+        此前传输控件整组住在 `.di-card` 里，而卡片折叠时 `opacity:0` —— 于是"想暂停"
+        必须先把胶囊点开，多一步且没有任何提示。
+
+        ⚠️ 两枚都走 `stop()`：胶囊本身点击是"展开"，不拦事件就会变成"一按播放就展开"。
+      */}
+      <div className="di-pill-ctl" aria-hidden={cardOn}>
+        <IconButton title={playing ? '暂停' : '播放'} onClick={stop(onToggle)}>
+          {playing ? <Pause size={14} /> : <Play size={14} />}
+        </IconButton>
+        <IconButton title="下一曲" onClick={stop(onNext)}>
+          <SkipForward size={14} />
+        </IconButton>
       </div>
 
       <div
@@ -513,10 +533,13 @@ function MusicCard({
             )}
           </div>
         ) : (
-          <>
-            <div className="di-artist">{song.artist || '未知歌手'}</div>
-            <MusicProgress />
-          </>
+          /*
+           * 播放卡不再自己画一行歌手：歌手行由共享元素 `.di-subname` 承担
+           * （绝对定位、折叠↔展开靠 transform 补间）。此前这里还有一个 `.di-artist`，
+           * 位置与 `.di-subname` 几乎重合（x 差 2px、同一 y）⇒ **同一句歌手被画了两遍**。
+           * 一个信息只能有一个 owner：留在补间体系里的那一个。
+           */
+          <MusicProgress />
         )}
         <div className="di-ctl">
           <IconButton title="上一曲" onClick={stop(onPrev)}>

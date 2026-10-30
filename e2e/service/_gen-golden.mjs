@@ -135,8 +135,8 @@ function genEngine() {
 function genStoreExec() {
   const dirs = freshDirs('gen');
   const raw = run(['--store-exec-selftest'], {
-    MIAO_ROOT: dirs.root,
-    MIAO_STATE_DIR: dirs.state,
+    MIAO_MANGA_ROOT_DIR: dirs.root,
+    MIAO_MANGA_STATE_DIR: dirs.state,
     MIAO_TOKEN: 'a'.repeat(64),
     MIAO_ENGINE_PROTOCOL: 'mock',
   });

@@ -18,19 +18,20 @@
  *
  * ## 断言
  *   PATH.default   无覆盖时的 13 个路径与 golden 逐字节相同
- *   PATH.override  `MIAO_STATE_DIR/ROOT/ENGINE_DIR/ENGINE_PYTHON/ENGINE_SERVER_DIR/MODEL_MANIFEST`
+ *   PATH.override  `MIAO_ROOT/MANGA_STATE_DIR/MANGA_ROOT_DIR/MANGA_RUNTIME_ROOT/ENGINE_DIR/ENGINE_PYTHON/ENGINE_SERVER_DIR/MODEL_MANIFEST`
  *                  覆盖后仍与 golden 逐字节相同
  *   PATH.keys      两侧键集合完全一致（少一个键 = 少一条断言）
- *   PATH.appData   未设 `MIAO_*` 时引擎落点锚在 `<appData>/runtimes`（逐字节相同**不保证**落点对）
+ *   PATH.appData   未设 `MIAO_*` 时落点锚在 `<appData>/MiaoDock/manga/…`，且漫画库在 `~/Pictures`
+ *                  （逐字节相同**不保证**落点正确 —— 金标与实现可以一起错）
  *   PATH.tooling   装配脚本（setup-engine / install-engine-deps / fetch-models）的落点与产品同源
  *
  * ## 反证轮（--refute）
  *   M1 篡改 golden 的 override.enginePython  → PATH.override 变红
- *   M2 篡改 golden 的 default.rootDir        → PATH.default 变红
+ *   M2 篡改 golden 的 default.mangaRootDir   → PATH.default 变红
  *   M3 删 golden 的一个键                    → PATH.keys 变红
  *   M4 Rust 快照落点换成仓库布局             → PATH.appData 变红（证明落点断言不是恒真）
  *   M5 装配脚本落点退回仓库 runtimes/        → PATH.tooling 变红
- *   M6 真实分叉：Rust 用「只覆盖 MIAO_ROOT」的 env 跑 → PATH.override 变红（证明比的是本次运行）
+ *   M6 真实分叉：Rust 只覆盖 MIAO_MANGA_ROOT_DIR 的 env 跑 → PATH.override 变红（证明比的是本次运行）
  *
  * 用法：node e2e/service/paths-parity-check.mjs [--refute]
  * 前置：`cd src-tauri && cargo build --bin mangasvc`
@@ -112,14 +113,18 @@ function expectAppData() {
 }
 
 /**
- * B1 验收①：一份快照的引擎落点必须锚在 `<appData>/runtimes` 下。
+ * B1 验收①：一份快照的落点必须锚在 `<appData>/MiaoDock/manga/…` 下，
+ * 且**漫画库必须在 `~/Pictures`**（用户成果不得藏进 appData）。
  * 返回不合规的条目数组（空 = 合规）。
  */
 function appDataViolations(snap) {
-  const rt = path.join(expectAppData(), 'runtimes');
+  const root = path.join(expectAppData(), 'MiaoDock');
+  const rt = path.join(root, 'manga', 'runtimes');
   const venvRel = process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python');
   const want = {
-    runtimeRoot: rt,
+    dataRoot: root,
+    mangaStateDir: path.join(root, 'manga', 'state'),
+    mangaRuntimeRoot: rt,
     engineDir: path.join(rt, 'manga-translator', 'src'),
     enginePython: path.join(rt, 'manga-translator', 'venv', venvRel),
   };
@@ -131,6 +136,14 @@ function appDataViolations(snap) {
   if (snap.engineDir && snap.repoRoot && snap.engineDir.startsWith(snap.repoRoot)) {
     bad.push(`engineDir 仍在仓库根下（${snap.engineDir}）`);
   }
+  // 漫画库是用户成果：必须在 Pictures 下，且不得落进数据根
+  const pictures = path.join(os.homedir(), 'Pictures');
+  if (!snap.mangaRootDir || !snap.mangaRootDir.startsWith(pictures)) {
+    bad.push(`mangaRootDir 不在 ~/Pictures 下（${snap.mangaRootDir}）`);
+  }
+  if (snap.mangaRootDir && snap.mangaRootDir.startsWith(root)) {
+    bad.push(`mangaRootDir 被藏进数据根（${snap.mangaRootDir}）`);
+  }
   return bad;
 }
 
@@ -141,10 +154,12 @@ function appDataViolations(snap) {
 function diffTooling(tooling, snap) {
   if (!tooling || !snap) return ['缺少快照'];
   const out = [];
-  if (tooling.runtimeRoot !== snap.runtimeRoot) {
-    out.push(`runtimeRoot: 工具链=${JSON.stringify(tooling.runtimeRoot)} 产品=${JSON.stringify(snap.runtimeRoot)}`);
+  if (tooling.runtimeRoot !== snap.mangaRuntimeRoot) {
+    out.push(
+      `runtimeRoot: 工具链=${JSON.stringify(tooling.runtimeRoot)} 产品=${JSON.stringify(snap.mangaRuntimeRoot)}`,
+    );
   }
-  // 模型根 = `engineDir/..`（config.mjs 的 engineModelDir 就是这么派生的）
+  // 模型根 = `engineDir/..`（engineModelDir 就是这么派生的）
   const want = path.resolve(snap.engineDir, '..');
   if (tooling.runtimesDir !== want) {
     out.push(`runtimesDir: 工具链=${JSON.stringify(tooling.runtimesDir)} 产品=${JSON.stringify(want)}`);
@@ -176,7 +191,7 @@ if (golden && rustNorm.default && rustNorm.override) {
   for (const sc of scenarios) {
     const d = diffPaths(rustNorm[sc.id], golden[sc.id]);
     check(
-      `PATH.${sc.id} — ${sc.id === 'default' ? '无覆盖时 13 个路径' : 'env 覆盖后 13 个路径'}与 golden 逐字节相同`,
+      `PATH.${sc.id} — ${sc.id === 'default' ? '无覆盖时 14 个路径' : 'env 覆盖后 14 个路径'}与 golden 逐字节相同`,
       d.length === 0,
       d,
     );
@@ -192,12 +207,13 @@ if (golden && rustNorm.default && rustNorm.override) {
     });
   }
 
-  // PATH.appData（B1 验收①）：未设 `MIAO_*` 时引擎落点必须锚在 `<appData>/runtimes`。
+  // PATH.appData（B1 验收①）：未设 `MIAO_*` 时落点必须锚在 `<appData>/MiaoDock/manga/…`，
+  //    且漫画库必须在 `~/Pictures`。
   //    为什么单独一条：逐字节相同**不保证**落点正确 —— Rust 与金标一起锚在仓库根上同样"相同"，
   //    而打包后那就是错的（A1 已论证 `repo_root()` 在打包态算不出根）。
   {
     const bad = appDataViolations(rustRaw.default);
-    check('PATH.appData — B1：未设 MIAO_* 时引擎落点在 <appData>/runtimes', bad.length === 0, bad);
+    check('PATH.appData — B1：未设 MIAO_* 时落点在 <appData>/MiaoDock/manga 且库在 ~/Pictures', bad.length === 0, bad);
   }
 
   // PATH.tooling（B1 收尾）：装配脚本（setup-engine / install-engine-deps / fetch-models）
@@ -235,13 +251,13 @@ if (REFUTE) {
       return diffPaths(rustNorm.override, g).length > 0;
     })(),
   });
-  // M2：篡改 golden 的 default.rootDir ⇒ PATH.default 必须红
+  // M2：篡改 golden 的 default.mangaRootDir ⇒ PATH.default 必须红
   mutations.push({
     id: 'M2',
-    what: '篡改 golden default.rootDir',
+    what: '篡改 golden default.mangaRootDir',
     red: (() => {
       const g = clone(golden.default);
-      g.rootDir = 'X:/wrong/root';
+      g.mangaRootDir = 'X:/wrong/root';
       return diffPaths(rustNorm.default, g).length > 0;
     })(),
   });
@@ -260,7 +276,7 @@ if (REFUTE) {
     const rt = path.join(rustRaw.default.repoRoot, 'runtimes');
     const repo = {
       ...rustRaw.default,
-      runtimeRoot: rt,
+      mangaRuntimeRoot: rt,
       engineDir: path.join(rt, 'manga-translator', 'src'),
       enginePython: path.join(rt, 'manga-translator', 'venv', 'Scripts', 'python.exe'),
     };
@@ -279,13 +295,13 @@ if (REFUTE) {
       red: diffTooling({ runtimeRoot: rt, runtimesDir: path.join(rt, 'manga-translator') }, rustRaw.default).length > 0,
     });
   }
-  // M6：真实分叉 —— Rust 用「只覆盖 MIAO_ROOT」的 env 跑，与 golden.override 必然对不上
+  // M6：真实分叉 —— Rust 用「只覆盖 MIAO_MANGA_ROOT_DIR」的 env 跑，与 golden.override 必然对不上
   {
     let red = false;
     let info = null;
     try {
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'miao-paths-refute-'));
-      const snap = await dumpRust({ MIAO_ROOT: path.join(tmp, 'root', 'Box 漫画') });
+      const snap = await dumpRust({ MIAO_MANGA_ROOT_DIR: path.join(tmp, 'root', 'manga') });
       const g = normSnapshot(snap, { tmp, repo: REPO_ROOT });
       const diffs = diffPaths(g, golden.override);
       red = diffs.length > 0;
@@ -294,7 +310,7 @@ if (REFUTE) {
       red = true;
       info = String(e.message || e).slice(0, 200);
     }
-    mutations.push({ id: 'M6', what: 'Rust 只覆盖 MIAO_ROOT（与 golden.override 对不上）', red, info });
+    mutations.push({ id: 'M6', what: 'Rust 只覆盖 MIAO_MANGA_ROOT_DIR（与 golden.override 对不上）', red, info });
   }
 
   let allRed = true;

@@ -1,4 +1,5 @@
 import type { MouseEvent, ReactNode } from 'react';
+import { Btn } from '@components/units/Btn';
 
 /**
  * 圆形图标按钮（通用单元）—— 播放条、展开播放器、列表行内操作共用一套热区。
@@ -24,8 +25,16 @@ export function IconButton({
 }) {
   const cls = ['ui-cbtn', primary ? 'main' : '', active ? 'is-on' : ''].filter(Boolean).join(' ');
   return (
-    <button type="button" className={cls} title={title} aria-label={title} disabled={disabled} onClick={onClick}>
+    <Btn
+      kind="bare"
+      type="button"
+      className={cls}
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+    >
       {children}
-    </button>
+    </Btn>
   );
 }

@@ -85,7 +85,7 @@ npm run build           # tsc --noEmit && vite build
 ## 四、目录与改名
 
 - **按「依赖什么」定归属**：通用 UI 放 `src/components/units/`（判据：**不 import 业务层**）；
-  跨组件共享状态放 `src/stores/`；与后端通信放 `src/ipc/`；音乐域整体留在 `src/music/`。
+  跨组件共享状态放 `src/stores/`；与后端通信放 `src/ipc/`；音乐域整体留在 `src/modules/music/`。
 - **`src/` 内不写相对 import**，一律走别名（`@/…` / `@components` / `@screens` / `@music` /
   `@hooks` / `@tools`）。**加别名必须 `vite.config.ts` 与 `tsconfig.json` 双处同步**，
   且 `@x` 与 `@x/*` 成对。

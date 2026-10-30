@@ -9,3 +9,4 @@
 //! 不认识音乐）——按「依赖什么定归属」它们不属于任何一个业务域。
 pub mod child_watch;
 pub mod paths;
+pub mod root_guard;

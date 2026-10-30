@@ -262,6 +262,14 @@ fn resolve_task_lang(payload: &Value) -> Result<Option<Lang>, StoreError> {
 }
 
 /// 复刻 `assertRootWritable`（§2.2 `DISK_FULL(507)`）：请求级落盘不可用 ⇒ 507。
+///
+/// 🔴 **反证开关 `MIAO_PROBE_NO_ERRNO=1`**（2026-10-30 补）：让探测写入抛一个**不带 errno**
+/// 的错误（真实环境里由运行时策略层抛出，无法从外部按需触发），用来证明
+/// 「非文件系统错误**不得**伪装成 507 磁盘满」。
+///
+/// 为什么必须是**原生**开关：F5 起服务靶子是 `mangasvc` 二进制，而 A21 ② 组原先用
+/// `NODE_OPTIONS=--import` 给服务进程挂 Node 钩子 —— 钩子只对 Node 生效，对 Rust 进程
+/// 完全不起作用 ⇒ 那四条断言从 F5 起就是**恒红**（不是产品缺陷，是夹具失效）。
 fn assert_root_writable(shell: &Shell) -> Result<(), StoreError> {
     let root = shell.store_root();
     let probe = root.join(format!(
@@ -269,6 +277,12 @@ fn assert_root_writable(shell: &Shell) -> Result<(), StoreError> {
         std::process::id(),
         super::store::model::now_ms()
     ));
+    // 反证开关：造一个"没有 errno 的错误"，且**不落盘**（否则会留 probe 残留）
+    if crate::mangasvc::store::env_bool("MIAO_PROBE_NO_ERRNO", false) {
+        let why = "injected: 写入被外部策略层拦下（刻意不带 errno）".to_string();
+        security_log(&format!("落盘根目录探测被拦（非文件系统错误）：{}（{why}）", root.display()));
+        return Err(StoreError::new("INTERNAL", "落盘根目录探测失败（非文件系统错误）", json!({ "root": root.to_string_lossy(), "reason": why })));
+    }
     match std::fs::write(&probe, b"") {
         Ok(()) => {
             let _ = std::fs::remove_file(&probe);

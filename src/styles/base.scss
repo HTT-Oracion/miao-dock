@@ -9,13 +9,49 @@
  * 成为**结构性事实**：要换主题只能改变量，没有第二处可以偷偷写死颜色。
  *
  * 同理，本文件（以及任何分片）里**不得**出现 SCSS 变量承载颜色 —— 令牌只走
- * `var(--md-*)`，否则「只换变量」就不成立了。
+ * `var(--md-*)`（底层调色板）或 `var(--miao-*)`（ver3 语义层），否则「只换变量」就不成立了。
  */
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+/*
+ * 字号分档系数 —— **档位值只写在这里**，换算发生在构建期
+ * （`vite.config.ts` 的 `uiScaleFonts`：产物里每条 `font-size: Npx` 变成
+ * `calc(Npx * var(--ui-scale))`，源码保持纯像素）。
+ *
+ * 四档与设计稿 `--ui-scale` 同值同断点：≥1500 → 1.06、≥1720 → 1.12、≥1920 → 1.18、
+ * ≤1180 → 0.95，其余为 1。为什么这个令牌写在 CSS 而不是 `themes/tokens.ts`：
+ *  ① 它不是颜色，不参与「深色模式只换变量」那条约束；
+ *  ② 它的值由**视口宽度**决定，媒体查询是原生能力；交给 JS 就得自己挂 resize 重算，
+ *     反而多一处状态源（歌词窗、番剧窗各有独立文档，更要留在 CSS 里）。
+ */
+:root {
+  --ui-scale: 1;
+}
+
+@media (min-width: 1500px) {
+  :root {
+    --ui-scale: 1.06;
+  }
+}
+@media (min-width: 1720px) {
+  :root {
+    --ui-scale: 1.12;
+  }
+}
+@media (min-width: 1920px) {
+  :root {
+    --ui-scale: 1.18;
+  }
+}
+@media (max-width: 1180px) {
+  :root {
+    --ui-scale: 0.95;
+  }
 }
 
 html,
@@ -26,16 +62,20 @@ body,
 }
 
 body {
-  background: var(--md-board);
-  color: var(--md-ink);
+  background:
+    radial-gradient(900px 520px at 10% -8%, rgba(110, 151, 185, 0.13), transparent 62%),
+    radial-gradient(760px 460px at 104% 18%, rgba(223, 164, 125, 0.12), transparent 64%),
+    radial-gradient(680px 420px at 64% 112%, rgba(140, 168, 140, 0.1), transparent 66%), var(--miao-bg);
+  color: var(--miao-text);
   font-family: var(--md-font-body);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 13.5px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   /* 桌面应用：禁掉整页拖选与橡皮筋滚动，文字仍可局部选中 */
   -webkit-user-select: none;
   user-select: none;
   overflow: hidden;
+  text-rendering: optimizeLegibility;
 }
 
 button {
@@ -52,20 +92,35 @@ textarea {
   font: inherit;
 }
 
-/* 应用内所有可滚动区域统一细滚动条 */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/*
+ * 滚动条：**藏起原生的，改用覆盖式自绘**。
+ *
+ * 原生 `::-webkit-scrollbar` 是**占位式**的 —— 设 6px 就吃掉 6px 内容宽度，
+ * 设 0 就完全看不见。想要"细 / 半透明 / 不占宽度"三者同时成立，Chromium 里只有
+ * 覆盖式一条路：原生条藏掉（滚动能力不动），由 `useOverlayScrollbar` 画一层
+ * `position: absolute` 的滑块浮在内容上（见 `.ui-osb`）。
+ *
+ * `scrollbar-width: none` 是标准属性（Firefox / 新版 Chromium 都认），
+ * `::-webkit-scrollbar { display: none }` 覆盖老 Chromium。
+ */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--md-line);
+  background: color-mix(in srgb, var(--miao-line-strong) 78%, transparent);
   border: 3px solid transparent;
   border-radius: 999px;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--md-muted);
+  background: var(--miao-muted);
   background-clip: content-box;
+  border: 3px solid transparent;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -83,9 +138,9 @@ textarea {
   font-weight: 700;
 }
 
-/* 键盘可达性：焦点环用品牌 pink，不用浏览器默认蓝 */
+/* 键盘可达性：焦点环用模块主色，不用浏览器默认蓝 */
 :focus-visible {
-  outline: 2px solid var(--md-pink);
+  outline: 2px solid color-mix(in srgb, var(--miao-primary) 52%, transparent);
   outline-offset: 2px;
 }
 
@@ -97,4 +152,94 @@ textarea {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* ================================================================
+ * 空色日和 · 基础层
+ * 排版基座、底色与焦点环（深色只换变量，结构不变）。
+ * ================================================================ */
+
+/* ---------------- 基础 ---------------- */
+
+/*
+ * ⚠️ 这里曾有一条 `html, body { background: transparent }` —— 它把上面那条
+ * 三层渐变（天蓝 / 杏奶 / 鼠尾草）整条盖掉了，于是整个应用只剩一块纯色底
+ * （`--miao-bg`），看起来"少了一个渐变背景"。
+ * 窗口透明由 `.app` 自己负责（它是 `transparent`），不需要动 body。
+ */
+
+html[data-theme='dark'] body {
+  background:
+    radial-gradient(900px 520px at 10% -8%, rgba(133, 173, 206, 0.1), transparent 62%),
+    radial-gradient(760px 460px at 104% 18%, rgba(227, 176, 138, 0.07), transparent 64%),
+    radial-gradient(680px 420px at 64% 112%, rgba(155, 184, 154, 0.06), transparent 66%), var(--miao-bg);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+strong,
+b,
+th {
+  font-family: var(--md-font-display);
+  color: var(--miao-ink);
+}
+
+::selection {
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+}
+
+/* ---------------- 番剧隔离作用域 ----------------
+ * 番剧模块不在本次改造范围内：恢复旧调色板，避免全局换色把它一起改掉。
+ * 只声明颜色变量，不动任何结构或业务样式。
+ */
+
+.an-root {
+  /* 字号分档对番剧**不适用**（隔离红线）。换算由构建期统一注入（见 `vite.config.ts`），
+     产物里所有分片的 CSS 已在同一个文件里、按文件排除不掉，所以用隔离作用域把它关掉：
+     `--ui-scale` 会被 `calc()` 就地取到，番剧整棵子树恒按 1 计算。 */
+  --ui-scale: 1;
+  --md-ink: #3b3352;
+  --md-ink-2: #5c5478;
+  --md-muted: #8c85a3;
+  --md-surface: #ffffff;
+  --md-surface-2: #f5f5ff;
+  --md-board: #fafaff;
+  --md-line: #e5def5;
+  --md-line-soft: #f0ebfa;
+  --md-pink: #ff8fbf;
+  --md-pink-soft: #ffe0ed;
+  --md-blue: #8fc7ff;
+  --md-blue-soft: #deedff;
+  --md-lavender: #c9b5ff;
+  --md-yellow: #ffe066;
+  --md-success: #70d9ad;
+  --md-error: #ff7d85;
+  --md-warning: #c97b12;
+  --md-on-accent: #ffffff;
+}
+
+html[data-theme='dark'] .an-root {
+  --md-ink: #f5f2ff;
+  --md-ink-2: #c9c2e0;
+  --md-muted: #9994b8;
+  --md-surface: #262140;
+  --md-surface-2: #2e294f;
+  --md-board: #140f29;
+  --md-line: #3b3361;
+  --md-line-soft: #292447;
+  --md-pink: #ff9ec4;
+  --md-pink-soft: #4a2440;
+  --md-blue: #8fc7ff;
+  --md-blue-soft: #1f304f;
+  --md-lavender: #c9b5ff;
+  --md-yellow: #ffe066;
+  --md-success: #80e3bd;
+  --md-error: #ff99a1;
+  --md-warning: #ffc46b;
+  --md-on-accent: #291a2e;
 }

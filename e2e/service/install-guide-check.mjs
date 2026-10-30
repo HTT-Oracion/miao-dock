@@ -14,10 +14,10 @@
  * 三种都**不报错**，只是把用户送进死胡同 —— 正是本仓一贯要消灭的那类"脱节且不报错"。
  *
  * ## 钉法：文档里放可复算的字面量，脚本把它们还原成"产品会给出的值"
- * ① **落点**：文档写的是模板（`%LOCALAPPDATA%\runtimes\manga-translator` /
- *    `~/Library/Application Support/runtimes/manga-translator`）。脚本把模板**代入**本机
+ * ① **落点**：文档写的是模板（`%LOCALAPPDATA%\MiaoDock\manga\runtimes\manga-translator` /
+ *    `~/Library/Application Support/MiaoDock/manga/runtimes/manga-translator`）。脚本把模板**代入**本机
  *    环境算出实际路径，与产品算的落点**逐字节**比。产品侧的答案有两个来源：
- *      · **当前平台** ⇒ `mangasvc --print-paths` 的 `runtimeRoot`（真二进制，最强）；
+ *      · **当前平台** ⇒ `mangasvc --print-paths` 的 `mangaRuntimeRoot`（真二进制，最强）；
  *      · **另一个平台** ⇒ 同源镜像表（`paths.rs::app_data_dir` / `config.mjs::defaultAppDataDir`
  *        的分叉规则）。镜像表本身由上面那条断言**在当前平台**钉住 ⇒ 两边不会一起走散。
  *    🔴 **诚实的取证边界**：本机只能跑一个平台的二进制，所以"另一个平台"的分支永远只能
@@ -89,7 +89,7 @@ const GUIDES = [
     file: 'docs/install-guide-windows.md',
     title: 'Windows',
     /** 文档里写的落点**模板**（模板里的占位符由 `expand` 代入本机环境）。 */
-    rootTemplate: '%LOCALAPPDATA%\\runtimes\\manga-translator',
+    rootTemplate: '%LOCALAPPDATA%\\MiaoDock\\manga\\runtimes\\manga-translator',
     expand: (tpl) => tpl.replace('%LOCALAPPDATA%', process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local')),
     appData: () => process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local'),
     /** 平台专属解释器形态（B3 的同一处分叉）。 */
@@ -101,7 +101,7 @@ const GUIDES = [
     os: 'darwin',
     file: 'docs/install-guide-macos.md',
     title: 'macOS',
-    rootTemplate: '~/Library/Application Support/runtimes/manga-translator',
+    rootTemplate: '~/Library/Application Support/MiaoDock/manga/runtimes/manga-translator',
     expand: (tpl) => tpl.replace(/^~/, HOME),
     appData: () => path.join(HOME, 'Library', 'Application Support'),
     pythonShape: 'venv/bin/python',
@@ -159,7 +159,7 @@ function printPaths() {
 
 const paths = await printPaths();
 /// 产品的引擎落点 = `<runtimeRoot>/manga-translator`（`paths::runtimes_dir()`）。
-const PRODUCT_ROOT = path.join(paths.runtimeRoot, 'manga-translator');
+const PRODUCT_ROOT = path.join(paths.mangaRuntimeRoot, 'manga-translator');
 const MANIFEST = MANIFEST_OVERRIDE || paths.modelManifest;
 
 /** 按平台过滤清单求和（与 `model-store.mjs::matchesPlatform` 同义）。 */
@@ -195,7 +195,9 @@ for (const g of GUIDES) {
     text.includes(g.rootTemplate) &&
       path.normalize(expanded) ===
         path.normalize(
-          g.os === process.platform ? PRODUCT_ROOT : path.join(g.appData(), 'runtimes', 'manga-translator'),
+          g.os === process.platform
+            ? PRODUCT_ROOT
+            : path.join(g.appData(), 'MiaoDock', 'manga', 'runtimes', 'manga-translator'),
         ),
     { template: g.rootTemplate, expanded, product: PRODUCT_ROOT, platform: process.platform },
   );
@@ -265,15 +267,16 @@ for (const g of GUIDES) {
 // ⑧ 镜像表自身被产品钉住（当前平台）—— 另一平台的分支只能靠这一条间接保证
 {
   const branch = GUIDES.find((g) => g.os === process.platform);
-  const ok = !!branch && path.normalize(path.join(branch.appData(), 'runtimes')) === path.normalize(paths.runtimeRoot);
+  const mirror = branch ? path.join(branch.appData(), 'MiaoDock', 'manga', 'runtimes') : null;
+  const ok = !!branch && path.normalize(mirror) === path.normalize(paths.mangaRuntimeRoot);
   check(
-    'IG.mirror — 当前平台的 appData 镜像表与产品 --print-paths 的 runtimeRoot 逐字节一致' +
+    'IG.mirror — 当前平台的 appData 镜像表与产品 --print-paths 的 mangaRuntimeRoot 逐字节一致' +
       '（另一平台的分支在本机对不到真二进制 ⇒ 归 D7 真机验收）',
     ok,
     {
       platform: process.platform,
-      mirror: branch ? path.join(branch.appData(), 'runtimes') : null,
-      product: paths.runtimeRoot,
+      mirror,
+      product: paths.mangaRuntimeRoot,
     },
   );
 }

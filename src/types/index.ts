@@ -38,6 +38,13 @@ export interface TaskRow {
   outputDir: string;
   createdAt: string;
   finishedAt: string | null;
+  /**
+   * 失败页的原始原因（只含失败项）。
+   *
+   * 队列行原本只显示「N 页失败」，看不出**为什么**。这个字段带引擎原话，
+   * 供行的 `title` / 失败提示直接展示。**可选**：旧任务快照没有它。
+   */
+  failedItems?: { seq: number; reason: string | null; errorMessage: string | null }[];
 }
 
 export interface TaskListResponse {
@@ -154,6 +161,11 @@ export interface ChapterEntry {
   merged: boolean;
   /** 已归并时的归属；未归并为 `null` */
   mergedTo?: { bookName: string; no: number } | null;
+  /**
+   * 话目录最后修改时间（ISO 秒级，服务端 `modifiedAt`）。
+   * 设计稿话卡的「更新于 …」用它；**可选**：旧服务端不返回。
+   */
+  modifiedAt?: string | null;
 }
 
 export interface LibraryResponse {
@@ -244,11 +256,11 @@ export interface HealthResponse {
 // ------------------------------------------------------------------ 展示映射
 
 export const STATUS_LABEL: Record<TaskStatus, string> = {
-  queued: '排队中',
-  running: '翻译中',
+  queued: '等待中',
+  running: '进行中',
   done: '已完成',
   partial_failed: '部分失败',
-  failed: '失败',
+  failed: '全部失败',
   canceled: '已取消',
 };
 

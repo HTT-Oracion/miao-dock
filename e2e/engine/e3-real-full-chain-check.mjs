@@ -41,7 +41,7 @@ const VENV_PY =
   process.platform === 'win32'
     ? path.join(RT, 'venv', 'Scripts', 'python.exe')
     : path.join(RT, 'venv', 'bin', 'python');
-const SAKURA_GGUF = path.join(RT, 'models', 'sakura', 'sakura-1.5b-qwen2.5-v1.0-fp16.gguf');
+const SAKURA_GGUF = path.join(RT, 'models', 'sakura', 'Sakura-Galtransl-7B-v3.7-IQ4_XS.gguf');
 const TEST_IMAGE = path.join(ROOT, 'test-manga', 'test_0.webp');
 
 const KEEP = process.argv.includes('--keep');
@@ -233,8 +233,8 @@ process.env.MIAO_ENGINE_PROTOCOL = 'real';
 process.env.MIAO_ENGINE_PROBE_MS = '500';
 process.env.MIAO_ENGINE_TIMEOUT_MS = String(ITEM_BUDGET_MS);
 process.env.MIAO_TOKEN = crypto.randomBytes(32).toString('hex');
-process.env.MIAO_STATE_DIR = STATE_DIR;
-process.env.MIAO_ROOT = ROOT_DIR;
+process.env.MIAO_MANGA_STATE_DIR = STATE_DIR;
+process.env.MIAO_MANGA_ROOT_DIR = ROOT_DIR;
 
 // 🔴 原先是 `import { probeEngine, resolveEngineLaunch } from 'service/src/engine-client.mjs'`。
 //    该文件随 `service/` 删除（D-205）后，那两件事在 Rust 侧各有落点：
@@ -358,8 +358,8 @@ try {
         MIAO_ENGINE_PORT: String(ENGINE_PORT),
         MIAO_ENGINE_PROBE_MS: '500',
         MIAO_ENGINE_TIMEOUT_MS: String(ITEM_BUDGET_MS),
-        MIAO_ROOT: ROOT_DIR,
-        MIAO_STATE_DIR: STATE_DIR,
+        MIAO_MANGA_ROOT_DIR: ROOT_DIR,
+        MIAO_MANGA_STATE_DIR: STATE_DIR,
         MIAO_PORT: String(SERVICE_PORT),
         MIAO_LLM_PORT: String(LLAMA_PORT),
       },

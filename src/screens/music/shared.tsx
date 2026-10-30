@@ -68,6 +68,7 @@ export function SongRow({
   active,
   leading,
   meta,
+  aside,
   actions,
   onClick,
   onPlay,
@@ -79,6 +80,8 @@ export function SongRow({
   active?: boolean;
   leading?: ReactNode;
   meta?: ReactNode;
+  /** 附加列（设计稿 `.song-album`）：曲目表里的"专辑"列，与副标题行的歌手是两处内容 */
+  aside?: ReactNode;
   actions?: ReactNode;
   onClick?: () => void;
   onPlay?: () => void;
@@ -104,8 +107,12 @@ export function SongRow({
       {showCover ? <Cover url={cover ?? ''} /> : null}
       <div className="music-row-tx">
         <b>{song.name}</b>
+        {/* 副标题行默认给**歌手**（设计稿 `.song-tx small`）—— 不给 meta 时就是它 */}
         <span>{meta ?? song.artist}</span>
       </div>
+      {/* 附加列（设计稿 `.song-album`）：曲目表里的"专辑"列。
+          它与副标题行是**两处不同内容**：副标题永远是歌手，这一列才放专辑。 */}
+      {aside}
       {durMs ? <span className="music-dur">{fmtTime(durMs)}</span> : null}
       {actions ? <div className="music-row-act">{actions}</div> : null}
       {/* 菜单 portal 到 body（列表是滚动容器，挂在行内会被裁掉） */}

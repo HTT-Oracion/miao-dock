@@ -43,7 +43,7 @@ const F = {
   app: path.join(SRC, 'App.tsx'),
   viteConfig: path.join(APP, 'vite.config.ts'),
   tsconfig: path.join(APP, 'tsconfig.json'),
-  queueScreen: path.join(SRC, 'screens', 'QueueScreen.tsx'),
+  queueScreen: path.join(SRC, 'screens', 'manga', 'QueueScreen.tsx'),
   rightPanel: path.join(SRC, 'screens', 'music', 'RightPanel.tsx'),
   queueDrawer: path.join(SRC, 'screens', 'music', 'QueueDrawer.tsx'),
   // D-150：`sections.tsx` 已拆到 `sections/*.tsx`，本表见下方 CALLER_IMPORT_FILES。
@@ -62,9 +62,9 @@ const F = {
   toastBus: path.join(SRC, 'stores', 'toastBus.ts'),
   musicToast: path.join(SRC, 'screens', 'music', 'Toast.tsx'),
   tooltip: path.join(SRC, 'components', 'units', 'Tooltip.tsx'),
-  library: path.join(SRC, 'screens', 'LibraryScreen.tsx'),
+  library: path.join(SRC, 'screens', 'manga', 'LibraryScreen.tsx'),
   // D-148：`LibraryScreen.tsx` 拆出「看图/对照」簇；ZOOM 组的锚点随之落到 viewer.tsx
-  libraryViewer: path.join(SRC, 'screens', 'library', 'viewer.tsx'),
+  libraryViewer: path.join(SRC, 'screens', 'manga', 'viewer.tsx'),
   // 断言读到的 s.appCss 是全分片拼接（见下方 readStyleSource 调用处）；
   // 下面这个 musicScss **只给反证机制用**（按 file 路径临时改源文件）。
   // 灵动岛的样式在 music.scss 里（.di-capsule 等），故反证指向它。
@@ -75,13 +75,21 @@ const F = {
 };
 
 // ── 冻结的契约（负责人冻结，本脚本照抄，不改口径） ────────────────────────
-/** units 目录应恰有的 18 个文件（多一个/少一个都判红；useEsc 已迁 src/hooks，D-41）
+/** units 目录应恰有的 24 个文件（多一个/少一个都判红；useEsc 已迁 src/hooks，D-41）
  *  Tooltip / ContextMenu 是 2026-10-11 漫画右键菜单一并入册的可复用件（D-124）
  *  Modal 是 2026-10-11 收敛 5 处手写模态壳（D-143）
- *  ProgressRing 是 2026-10-14 引擎下载进度环（工具条/下载视图共用，D-150） */
+ *  ProgressRing 是 2026-10-14 引擎下载进度环（工具条/下载视图共用，D-150）
+ *  SideDrawer 是 2026-10-22 ver3 设置页「运行日志」抽屉（右侧滑入的通用浮层，D-279）
+ *  Segmented 是 2026-10-23 收敛设计稿 `.seg`（设置页两档选择 + 桌面歌词行数各写过一套，D-353） */
 const MANIFEST = [
   'atoms.tsx',
+  'Btn.tsx',
+  'Skeleton.tsx',
+  'ErrorState.tsx',
   'Select.tsx',
+  'Segmented.tsx',
+  'ViewTabs.tsx',
+  'SideDrawer.tsx',
   'Switch.tsx',
   'Range.tsx',
   'Swatches.tsx',
@@ -96,6 +104,9 @@ const MANIFEST = [
   'ProgressRing.tsx',
   'NumberInput.tsx',
   'Empty.tsx',
+  'Mascot.tsx',
+  'LogBlock.tsx',
+  'OverlayScrollbar.tsx',
   'VirtualList.tsx',
   'index.ts',
 ];
@@ -111,6 +122,7 @@ const BARREL_EXPORTS = [
   'ColorPicker',
   'Empty',
   'IconButton',
+  'LogBlock',
   'MenuButton',
   'MenuItem',
   'Modal',
@@ -119,9 +131,11 @@ const BARREL_EXPORTS = [
   'ProgressRing',
   'Range',
   'Select',
+  'SideDrawer',
   'Swatches',
   'Switch',
   'Tooltip',
+  'ViewTabs',
   'ROW_GAP',
   'ROW_H',
   'VirtualList',
@@ -134,7 +148,11 @@ const HOOKS_MANIFEST = [
   'useMusicHotkeys.ts',
   'useDebouncedValue.ts',
   'useLibraryModel.ts',
-  'use-engine-download.ts',
+  'useEngineDownload.ts',
+  'useAnimePlayback.ts',
+  'useNav.ts',
+  'useAppVersion.ts',
+  'useOverlayScrollbar.ts',
 ];
 /** hooks/index.ts 业务桶应出口的业务 hook 名 */
 const HOOKS_BARREL_EXPORTS = [
@@ -144,6 +162,8 @@ const HOOKS_BARREL_EXPORTS = [
   'useQuitRequest',
   'useToasts',
   'useEngineDownload',
+  'useAnimePlayback',
+  'useNav',
 ];
 /** 允许被 units import 的裸包（其余裸包一律判红：新依赖需负责人确认） */
 const PKG_ALLOW = [/^react(\/.+)?$/, /^react-dom(\/.+)?$/, /^lucide-react$/];
@@ -159,7 +179,8 @@ const ALIASES = {
   '@tauri': path.join(APP, 'src-tauri'),
   '@components': path.join(SRC, 'components'),
   '@screens': path.join(SRC, 'screens'),
-  '@music': path.join(SRC, 'music'),
+  '@music': path.join(SRC, 'modules', 'music'),
+  '@anime': path.join(SRC, 'modules', 'anime'),
   '@hooks': path.join(SRC, 'hooks'),
   '@': SRC,
 };
@@ -178,7 +199,7 @@ function resolveSpec(baseDir, spec) {
 /** 调用点必须真的从 units 引 */
 const CALLER_IMPORT_FILES = {
   'App.tsx': F.app,
-  'screens/QueueScreen.tsx': F.queueScreen,
+  'screens/manga/QueueScreen.tsx': F.queueScreen,
   'screens/music/RightPanel.tsx': F.rightPanel,
   'screens/music/QueueDrawer.tsx': F.queueDrawer,
   // D-150：`sections.tsx` 已拆成 `sections/*.tsx` ⇒ 取其中引 units 最多的 TranslateSection 作代表
@@ -201,6 +222,14 @@ const listFiles = (dir) =>
     ? readdirSync(dir, { withFileTypes: true })
         .filter((e) => e.isFile())
         .map((e) => e.name)
+    : [];
+/** 递归收集**全路径**（`listFiles` 只给一层文件名，扫断言语料要跨目录） */
+const walkPaths = (dir) =>
+  existsSync(dir)
+    ? readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+        const p = path.join(dir, e.name);
+        return e.isDirectory() ? walkPaths(p) : [p];
+      })
     : [];
 
 /**
@@ -376,16 +405,20 @@ function loadSources() {
   // 屏装配件分派表（B1）
   s.routerPanes = readMaybe(F.routerPanes);
   // ZOOM：全屏看图缩放（Lightbox 在 viewer.tsx —— 屏本体已拆分，D-148）。
-  // 判据读「屏本体 + `screens/library/*.tsx`」的**拼接源码**，只关心"关键字在不在"。
+  // 判据读「屏本体 + `screens/manga/*.tsx`」的**拼接源码**，只关心"关键字在不在"。
   // 🔴 **逐文件单独 `stripComments` 再拼**：`stripComments` 是带状态机的（反引号 ≠ 字符串/正则
   //    字面量都可能让它跑偏，见 D-110）。直接拼原文再 strip，前一个文件的失同步会**污染**
   //    后一个文件（实测：viewer.tsx 的块注释因此没被剥掉 ⇒ ZOOM.wheelNonPassive 假阳性）。
   //    逐文件 strip 后每个文件都从 `code` 态起步，互不牵连；再 strip 一次是幂等的。
+  // 🔴 投放/队列两屏搬进 manga 目录后**必须排除**：它们与看图缩放无关，拼进语料等于
+  //    给关键字断言多开一个来源（关键词恰巧命中别的屏 = 假阳性）。排除后语料与搬迁前等价。
+  const MANGA_DIR = path.join(SRC, 'screens', 'manga');
+  const NON_LIBRARY_SCREENS = new Set(['DropScreen.tsx', 'QueueScreen.tsx']);
   s.library = [
     F.library,
-    ...listFiles(path.join(SRC, 'screens', 'library'))
-      .filter((n) => n.endsWith('.tsx'))
-      .map((n) => path.join(SRC, 'screens', 'library', n)),
+    ...listFiles(MANGA_DIR)
+      .filter((n) => n.endsWith('.tsx') && !NON_LIBRARY_SCREENS.has(n))
+      .map((n) => path.join(MANGA_DIR, n)),
   ]
     .map((p) => stripComments(readMaybe(p)))
     .join('\n');
@@ -412,6 +445,9 @@ function loadSources() {
   s.srcTauriAliasSpecs = [];
   // STATE：zustand 引用（证明状态库确实是 zustand，而不是"没 Context 也没 store"）
   s.srcZustandImports = [];
+  // STATE：各域 store（`src/modules/<域>/store.ts`）—— 逐个都得引 zustand，
+  // 只数"全仓有没有人引"会让"某个域换掉状态库"静默溜过去（反证 M 曾经就是假阳性）
+  s.srcModuleStores = [];
   // HOOKS：全 src 里 use* 命名的文件若不在 hooks/ 内即违规（D-41）
   s.srcMisplacedHooks = [];
   // 需要全量扫描的三件事：旧位置深引 useEsc / 相对上跳引用 / React Context
@@ -432,6 +468,9 @@ function loadSources() {
           if (/^@tauri\//.test(spec)) s.srcTauriAliasSpecs.push(`${rel} → ${spec}`);
           if (spec === 'zustand') s.srcZustandImports.push(rel);
         }
+        // 每个域 store 都要单独点名：只统计"全仓有人引 zustand"会让单个域换库时全绿
+        // （`rel` 是平台相关分隔符，Windows 上是反斜杠）
+        if (/^src[\\/]modules[\\/][^\\/]+[\\/]store\.ts$/.test(rel)) s.srcModuleStores.push(rel);
         if (/\b(?:createContext|useContext)\s*\(/.test(st)) s.srcReactContext.push(rel);
         // use* 命名的文件必须住在 src/hooks/ 内（否则 D-41 只是句口号）
         if (/^use[A-Z]/.test(e.name) && path.basename(dir) !== 'hooks') s.srcMisplacedHooks.push(rel);
@@ -728,7 +767,7 @@ function tsAliasKeys(text) {
 }
 
 /** 契约：六个别名（《09》§2.3.1） */
-const ALIAS_KEYS = ['@', '@tauri', '@components', '@screens', '@music', '@hooks'];
+const ALIAS_KEYS = ['@', '@tauri', '@components', '@screens', '@music', '@anime', '@hooks'];
 
 add('ALIAS.keysComplete', 'ALIAS', (s) => {
   const vite = viteAliasKeys(s.viteConfig);
@@ -826,12 +865,17 @@ add('STATE.noReactContext', 'STATE', (s) => {
 });
 
 add('STATE.zustandInUse', 'STATE', (s) => {
-  // 反向兜底：只断言"没有 Context"是不够的 —— 把 store 换成别的东西（或删掉）
-  // 也会让上一条变绿，而"统一 zustand"这条规则其实已经不成立。
-  const n = s.srcZustandImports.length;
+  // 反向兜底：只断言"没有 Context"是不够的 —— 把某个域的 store 换成别的东西（或删掉）
+  // 也会让上一条变绿，而"统一 zustand"这条规则在那个域其实已经不成立。
+  // 判据落在**每个域 store** 上：只数全仓"有没有人引 zustand"，删掉一个域照样全绿。
+  const missing = s.srcModuleStores.filter((rel) => !s.srcZustandImports.includes(rel));
   return {
-    ok: n > 0,
-    detail: n ? '' : '全 src 未发现 zustand 引用 —— 状态管理约定（D-42）已不成立',
+    ok: s.srcZustandImports.length > 0 && s.srcModuleStores.length > 0 && missing.length === 0,
+    detail: missing.length
+      ? `这些域 store 没引 zustand：${missing.join('、')}`
+      : s.srcModuleStores.length
+        ? ''
+        : '一个 modules/*/store.ts 都没扫到 —— 判据本身失效',
   };
 });
 
@@ -974,7 +1018,7 @@ add('TOOLTIP.graceHide', 'TOOLTIP', (s) => {
 // 判据一律先 stripComments：本组多条在注释里主动写出了反面写法
 // （`onWheel`、`passive`、捏合被吃等），不剥注释会恒红或恒绿 —— 两种都是假信号。
 add('ZOOM.wheelNonPassive', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const missing = [];
   if (!/addEventListener\('wheel'/.test(lib))
@@ -987,7 +1031,7 @@ add('ZOOM.wheelNonPassive', 'ZOOM', (s) => {
 });
 
 add('ZOOM.anchorZoom', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const from = lib.indexOf('const zoomAt = (');
   const to = lib.indexOf('useEffect', from);
@@ -1008,13 +1052,15 @@ add('ZOOM.anchorZoom', 'ZOOM', (s) => {
 });
 
 add('ZOOM.buttonFallback', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const missing = [];
   if (!/className="lightbox-zoom-btn"/.test(lib))
     missing.push('工具栏没有 .lightbox-zoom-btn（缺不依赖手势的缩放入口）');
-  if (!/aria-label="放大"/.test(lib)) missing.push('缺「放大」按钮');
-  if (!/aria-label="缩小"/.test(lib)) missing.push('缺「缩小」按钮');
+  // 无障碍名两种写法都成立：裸 `aria-label` 与走 `Btn` 单元的 `ariaLabel`
+  // （单元内部落成同一个 aria 属性，判据看的是"有没有这个名字"）
+  if (!/aria-label="放大"|ariaLabel="放大"/.test(lib)) missing.push('缺「放大」按钮');
+  if (!/aria-label="缩小"|ariaLabel="缩小"/.test(lib)) missing.push('缺「缩小」按钮');
   // 按钮必须真的调了缩放，而不是摆在那儿
   if (!/stepZoom/.test(lib)) missing.push('按钮没有接缩放逻辑 stepZoom');
   // 样式也得**齐**：只查「有 .lightbox-zoom-btn」会让「只有基础块、悬停/禁用态全缺」
@@ -1031,7 +1077,7 @@ add('ZOOM.buttonFallback', 'ZOOM', (s) => {
 });
 
 add('ZOOM.twoFingerPan', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   // ⚠️ 段首锚点必须在 `addEventListener('wheel'` **之前** —— 裸滚轮平移的分支写在
   //    onWheel 函数体里（注册语句在函数之后），从注册语句起算会把要判的代码切掉。
@@ -1053,7 +1099,7 @@ add('ZOOM.twoFingerPan', 'ZOOM', (s) => {
 // 取 `1 - deltaY·k`；写成 `1 + deltaY·k` 方向就反了。图能缩能放、类型也过，
 // 只有源码钉子拦得住 —— 2026-10-08 就是用户报「ctrl+↓ 才是放大」才发现写反的。
 add('ZOOM.wheelDirection', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const from = lib.indexOf('const onWheel = (e: WheelEvent)');
   const to = lib.indexOf("addEventListener('wheel'", from);
@@ -1077,7 +1123,7 @@ add('ZOOM.wheelDirection', 'ZOOM', (s) => {
 //   ⇒ 舞台 347×352、图被渲染成 345×517，纵向溢出 165px 并被 `overflow:hidden` 裁掉。
 //   换 flex 居中后是 233×350 —— 恰好铺满。故判据里必须钉住 flex 居中。
 add('ZOOM.fitToWindow', 'ZOOM', (s) => {
-  if (!s.library) return { ok: false, detail: 'screens/LibraryScreen.tsx 不存在' };
+  if (!s.library) return { ok: false, detail: 'screens/manga/LibraryScreen.tsx 不存在' };
   const lib = stripComments(s.library);
   const missing = [];
   // 初始 / 换页复位都必须落在「恰好铺满」档（不是缩放下限，否则开图小一半）
@@ -1130,7 +1176,7 @@ add('ZOOM.fitToWindow', 'ZOOM', (s) => {
 // 提到 .set-row），不剥注释会恒红 —— 而恒红比恒绿更隐蔽（它看起来像"覆盖到位"）。
 
 /** 约定的 @use 顺序。**顺序即层叠**：同特异性下靠后定义者胜，改它等于改视觉结果。 */
-const STYLE_USE_ORDER = ['base', 'app', 'manga', 'settings', 'components', 'music'];
+const STYLE_USE_ORDER = ['base', 'app', 'manga', 'settings', 'components', 'music', 'anime'];
 
 /** 从 index.scss 取出 @use 目标（去扩展名），剥注释以免举例被当真声明 */
 function useList(indexSrc) {
@@ -1184,9 +1230,22 @@ add('STYLE.shardOwnership', 'STYLE', (s) => {
   // `.set-row / .set-state`（设置页专用但由 units 组件实现）。双向禁会误报它们。
   // 反向自查已验证：把另一分片喂进来均会报红，判据确实能抓住放错。
   const FORBID = {
-    'manga.scss': [/\.music-/, /\.di-/, /\.pf-/, /\.ac-/, /\.sk-/, /\.skin-/, /\.kara-/, /\.viewtab/],
-    'music.scss': [/\.qt-/, /\.lib-/, /\.notready/, /\.logbox/, /\.magic-/, /\.compare-/, /\.dropzone/, /\.filelist/],
-    'settings.scss': [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.viewtab/],
+    // `.ui-vtab*` 是**通用单元**的样式（住 components.scss）⇒ 其余分片一律禁，
+    // 包括漫画与音乐两屏 —— 2026-10-26 起它们共用同一个 PageTabs 单元，
+    // 谁再在自己分片里写一份，就是"两处各一份、必然漂移"的老路。
+    'manga.scss': [/\.music-/, /\.di-/, /\.pf-/, /\.ac-/, /\.sk-/, /\.skin-/, /\.kara-/, /\.ui-vtab/],
+    'music.scss': [
+      /\.qt-/,
+      /\.lib-/,
+      /\.notready/,
+      /\.logbox/,
+      /\.magic-/,
+      /\.compare-/,
+      /\.dropzone/,
+      /\.filelist/,
+      /\.ui-vtab/,
+    ],
+    'settings.scss': [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.ui-vtab/],
     'app.scss': [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/, /\.set-/, /\.settings/],
     'components.scss': [/\.music-/, /\.di-/, /\.qt-/, /\.lib-/],
   };
@@ -1208,20 +1267,584 @@ add('STYLE.shardOwnership', 'STYLE', (s) => {
   return { ok: hits.length === 0, detail: hits.length ? hits.join('；') : '' };
 });
 
+add('STYLE.tokensDefined', 'STYLE', (s) => {
+  /*
+   * 用掉的语义令牌必须真的被定义 —— 自定义属性没定义时不是"没颜色"，
+   * 而是**整条声明按规范失效（IACVT）**，属性回落到继承值：CSS 里那行还在、看着没错，
+   * 效果为零，且浏览器不报任何东西。
+   * 实测抓到过：`--miao-accent-ink` 被 5 条规则使用，而 `themes/tokens.ts` 里从没写过它
+   * （见 D-357）—— 其中一处还挂了 `var(--miao-accent-ink, var(--miao-muted))` 兜底，
+   * 把"令牌缺失"这件事盖成了"看起来是灰的"。
+   */
+  const defined = new Set();
+  const tokPath = path.join(SRC, 'themes', 'tokens.ts');
+  if (!existsSync(tokPath)) return { ok: false, detail: '读不到 themes/tokens.ts（判据失去对象）' };
+  const tok = cachedReadText(tokPath);
+  // 两层令牌都要查：`--miao-*` 是 ver3 语义层、`--md-*` 是被 400+ 处使用的调色板层
+  // （`--md-*` 里也有整族循环生成的，见下面的前缀处理）
+  for (const m of tok.matchAll(/'(--(?:miao|md)-[\w-]+)'/g)) defined.add(m[1]);
+  /*
+   * 令牌不只有字面量写法：半径一族是 `out[`--miao-r-${k}`] = ...` **循环生成**的，
+   * 调色板一族是 `out[`--md-${k}`] = v` 同样如此。
+   * 判据若只认引号字面量，就会把这些族全部误报成"未定义"（第一版正是这样红了 9 处）。
+   * 处理方式：记下模板前缀 ⇒ 命中前缀的算已定义；同时**再拿对象键兜一层**，
+   * 这样 `--miao-r-xlarge` 这种拼错的仍然红 —— 放宽一处，必须有另一处收紧。
+   */
+  const prefixes = [];
+  for (const m of tok.matchAll(/out\[\s*`(--(?:miao|md)-(?:[\w-]*?))\$\{/g)) prefixes.push(m[1]);
+  const keyBlocks = [...tok.matchAll(/export const [A-Z_]+ = \{([\s\S]*?)\} as const/g)].map((m) =>
+    [...m[1].matchAll(/^\s*'?([\w-]+)'?\s*:/gm)].map((k) => k[1]),
+  );
+  const allKeys = new Set(keyBlocks.flat());
+  // CSS 里自己定义的也算（`--ui-scale` 就住在 base.scss，不在 tokens.ts）
+  let usedCount = 0;
+  const miss = [];
+  for (const [file, code] of Object.entries(s.styleShardCode || {})) {
+    const body = code.replace(/\/\*[\s\S]*?\*\//g, ' '); // 注释里举例写的 var() 不算使用
+    for (const m of body.matchAll(/^\s*(--(?:miao|md)-[\w-]+)\s*:/gm)) defined.add(m[1]);
+  }
+  const isDefined = (name) => {
+    if (defined.has(name)) return true;
+    for (const p of prefixes) {
+      if (name.startsWith(p)) {
+        const suffix = name.slice(p.length);
+        return allKeys.size === 0 || allKeys.has(suffix);
+      }
+    }
+    return false;
+  };
+  for (const [file, code] of Object.entries(s.styleShardCode || {})) {
+    const body = code.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    for (const m of body.matchAll(/var\((--(?:miao|md)-[\w-]+)[,)]/g)) {
+      usedCount += 1;
+      if (!isDefined(m[1]) && !miss.includes(`${file} → ${m[1]}`)) miss.push(`${file} → ${m[1]}`);
+    }
+  }
+  /*
+   * 第二道口径：**TSX 里的字符串令牌名**同样要查。`<Dot colorVar="--md-blu" />` 这种拼错
+   * 不会被 tsc 抓到（它就是个字面量），运行期表现是"那个点没颜色"，同样不报错 ——
+   * 与本轮修掉的 `--miao-accent-ink` 是同一类静默失效，只是换了一层。
+   */
+  const walkTs = (dir, acc = []) => {
+    if (!existsSync(dir)) return acc;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walkTs(p, acc);
+      else if (/\.(ts|tsx)$/.test(e.name)) acc.push(p);
+    }
+    return acc;
+  };
+  for (const f of walkTs(SRC)) {
+    if (/[\\/]themes[\\/]tokens\.ts$/.test(f)) continue;
+    const src = stripComments(readMaybe(f));
+    for (const m of src.matchAll(/['"](--(?:miao|md)-[\w-]+)['"]/g)) {
+      usedCount += 1;
+      if (!isDefined(m[1])) {
+        const rel = path.relative(ROOT, f);
+        if (!miss.includes(`${rel} → ${m[1]}`)) miss.push(`${rel} → ${m[1]}`);
+      }
+    }
+  }
+  return {
+    // 分母兜底：一条没用都没扫到 = 读空了，那不能算绿
+    ok: usedCount > 50 && miss.length === 0,
+    detail: miss.length
+      ? `未定义的令牌：${miss.join('、')}`
+      : usedCount > 50
+        ? ''
+        : `只扫到 ${usedCount} 处 var() 使用（疑似读空）`,
+  };
+});
+
+add('STYLE.noSilentTokenFallback', 'STYLE', (s) => {
+  /*
+   * 语义令牌**不许挂兜底值**：`var(--miao-x, var(--miao-muted))` 这种写法会把
+   * "令牌没定义"盖成"颜色看着偏灰"，正是上面那条判据要抓的事最好的掩体。
+   * （非语义的第三方变量兜底不在禁列内 —— 只禁 `--miao-*` 吃兜底。）
+   */
+  const hits = [];
+  for (const [file, code] of Object.entries(s.styleShardCode || {})) {
+    const body = code.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    for (const m of body.matchAll(/var\(--miao-[\w-]+\s*,/g)) hits.push(`${file}: ${m[0].trim()}`);
+  }
+  return { ok: hits.length === 0, detail: hits.length ? `语义令牌带了兜底值：${hits.join('、')}` : '' };
+});
+
+add('STYLE.sharedControlGeometry', 'STYLE', (s) => {
+  /*
+   * 两个**全站共用**的控件形状钉：图标按钮（模态框关闭钮）与色点（歌词配色）。
+   * 之所以要钉：`.icon-btn` 全仓只有一个使用者，改小了没人会发现 ——
+   * 之前它正是把设计稿的"小档"（28 / r8）当成了默认档（设计稿默认 34 / r10），
+   * 而 `.ui-swatch` 则是 16 / r9 / 1px 描边，与设计稿的 17 / 正圆 / 2px 抠边差三处。
+   * 这两处都不会红在任何现有断言上，靠人眼比对才会发现 —— 值不给钉就一定会再漂。
+   */
+  const want = {
+    'components.scss': [
+      {
+        sel: '.icon-btn',
+        decls: [
+          ['width', /(^|\n)\s*width:\s*34px\s*;/],
+          ['height', /(^|\n)\s*height:\s*34px\s*;/],
+          ['border-radius', /(^|\n)\s*border-radius:\s*10px\s*;/],
+        ],
+      },
+      {
+        sel: '.ui-swatch',
+        decls: [
+          ['width', /(^|\n)\s*width:\s*17px\s*;/],
+          ['height', /(^|\n)\s*height:\s*17px\s*;/],
+          ['border-radius', /(^|\n)\s*border-radius:\s*50%\s*;/],
+          ['border', /(^|\n)\s*border:\s*2px solid var\(--miao-surface\)\s*;/],
+        ],
+      },
+    ],
+  };
+  const bad = [];
+  let checked = 0;
+  for (const [file, rules] of Object.entries(want)) {
+    const code = s.styleShardCode?.[file];
+    if (!code) {
+      bad.push(`${file} 读不到（判据失去对象）`);
+      continue;
+    }
+    const body = code.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    for (const { sel, decls } of rules) {
+      const at = body.search(new RegExp(`(^|\\n)${sel.replace('.', '\\.')}\\s*\\{`));
+      if (at < 0) {
+        bad.push(`${sel} 没有规则了`);
+        continue;
+      }
+      // 块体：从 { 到第一个 }（分片内保持扁平写法，见 STYLE.noScssSyntax）
+      const block = body.slice(at, body.indexOf('}', at));
+      for (const [prop, re] of decls) {
+        checked += 1;
+        if (!re.test(block)) bad.push(`${sel} 的 ${prop} 与设计稿不符`);
+      }
+    }
+  }
+  // 分母自守：一条都没量到也算绿是最常见的死法
+  if (checked < 7) bad.push(`只量到 ${checked} 条声明（应 ≥ 7）`);
+  return { ok: bad.length === 0, detail: bad.length ? bad.join('、') : '' };
+});
+
+add('STYLE.setCtlNoteSingleSource', 'STYLE', (s) => {
+  /*
+   * `.set-ctl-note`（控件旁 9.5px 注解）必须**只有一个分片在定义**，而且必须是 settings.scss。
+   * 起因：它曾在 components.scss 与 settings.scss 里各有一份，而 components 分片在 settings 之后
+   * ⇒ **后到者胜**：改 settings 里那份，界面纹丝不动（本轮就是这么撞上的）。
+   * 这类"改对了文件却不见效"的缺陷，只读单个文件永远看不出来。
+   * 顺带钉住两条**生效值**（设计稿 theme-music.css 那一层的 `9.5px + muted`，与 110 宽的数字框）。
+   */
+  const bad = [];
+  const shards = s.styleShardCode || {};
+  const has = (code) => /(^|\n)\.set-ctl-note\s*\{/.test(stripComments(code || ''));
+  const owners = Object.keys(shards).filter((f) => has(shards[f]));
+  if (owners.length !== 1) bad.push(`.set-ctl-note 被 ${owners.length} 个分片定义（${owners.join(' / ') || '无'}）`);
+  else if (owners[0] !== 'settings.scss') bad.push(`.set-ctl-note 定义在 ${owners[0]}（应在 settings.scss）`);
+  const settings = stripComments(shards['settings.scss'] || '');
+  let checked = 0;
+  const want = [
+    ['注解字号 9.5px', /\.set-ctl-note\s*\{[^}]*\n\s*font-size:\s*9\.5px\s*;/],
+    ['注解色 muted', /\.set-ctl-note\s*\{[^}]*\n\s*color:\s*var\(--miao-muted\)\s*;/],
+    ['数字框 110 宽', /\.set-idle-line\s+\.ui-num\s*\{[^}]*\n\s*width:\s*110px\s*;/],
+  ];
+  for (const [label, re] of want) {
+    checked += 1;
+    if (!re.test(settings)) bad.push(`${label} 不符（没量到，或值与设计稿不同）`);
+  }
+  if (checked < 3) bad.push(`只量到 ${checked} 条（应 >= 3）`);
+  return { ok: bad.length === 0, detail: bad.length ? bad.join('；') : '' };
+});
+
+add('STYLE.tierLabelSingleSource', 'STYLE', () => {
+  /*
+   * 档位文案（`Tiny · 轻快` / `Small · 均衡` / `Medium · 精细`）只许在 engine-api.ts 定义一次。
+   * 起因：投放屏与设置屏**各写过一份** —— 投放屏那份是设计稿的写法，设置屏那份是光秃秃的
+   * `Small`，于是同一台机器上「投放屏显示 Small · 均衡、设置页显示 Small」。
+   * 后半截那个词是档位的性格，不是装饰；两份定义迟早只改一处。
+   */
+  const bad = [];
+  const apiPath = path.join(SRC, 'screens', 'settings', 'engine-api.ts');
+  if (!existsSync(apiPath)) return { ok: false, detail: '读不到 engine-api.ts（判据失去对象）' };
+  const api = cachedReadText(apiPath);
+  const want = [
+    ['tiny', 'Tiny · 轻快'],
+    ['small', 'Small · 均衡'],
+    ['medium', 'Medium · 精细'],
+  ];
+  let checked = 0;
+  for (const [key, label] of want) {
+    checked += 1;
+    if (!api.includes(`${key}: '${label}'`)) bad.push(`档位 ${key} 的文案不是「${label}」`);
+  }
+  for (const rel of ['screens/settings/sections/TranslateSection.tsx', 'screens/manga/DropScreen.tsx']) {
+    checked += 1;
+    const abs = path.join(SRC, rel);
+    if (!existsSync(abs)) {
+      bad.push(`${rel} 不存在`);
+      continue;
+    }
+    if (/const TIER_LABEL/.test(stripComments(cachedReadText(abs)))) bad.push(`${rel} 又自带了一份 TIER_LABEL`);
+  }
+  if (checked < 5) bad.push(`只量到 ${checked} 条（应 >= 5）`);
+  return { ok: bad.length === 0, detail: bad.length ? bad.join('；') : '' };
+});
+
+add('STYLE.motionTokensOnly', 'STYLE', (s) => {
+  /*
+   * 动效参数只走令牌。设计稿的三档时长与三条曲线（140 / 240 / 380ms + spring / spring-soft / out）
+   * 已经逐值对进 `MIAO_MOTION`，所以**写死数字就是绕开令牌**：改令牌时它不会跟着动，
+   * 而界面上表现成"个别地方快一拍/慢一拍"，肉眼很难指认是哪一条。
+   * 本轮清掉 13 条（0.15s / 0.18s / 0.25s / 0.28s / 0.3s + 一条非设计稿曲线 0.22,0.61,0.36,1）。
+   * 例外只留**连续量指示器**（进度条 / 电平条）：它们追的是音频/进度，不是交互反馈，
+   * `linear` 是正确选择，硬套 240ms 反而会让指示器迟滞。例外逐条列明，不用通配。
+   */
+  const METER_SELECTORS = new Set(['.ed-bar span', '.di-wave i', '.di-bar i']);
+  const bad = [];
+  let checked = 0;
+  for (const [file, code] of Object.entries(s.styleShardCode || {})) {
+    if (file === 'anime.scss') continue; // 番剧分片不在本任务范围
+    const body = stripComments(code || '');
+    for (const rule of body.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const sel = rule[1].trim().split('\n').pop().trim();
+      for (const m of rule[2].matchAll(/transition\s*:\s*([^;]+);/g)) {
+        const value = m[1].replace(/\s+/g, ' ').trim();
+        if (value === 'none' || METER_SELECTORS.has(sel)) continue;
+        checked += 1;
+        const usesToken = /var\(--miao-(dur|ease)/.test(value);
+        const hardDuration = /\b\d+(?:\.\d+)?m?s\b/.test(value);
+        if (hardDuration && !usesToken) bad.push(`${file} ${sel} → ${value}`);
+      }
+    }
+  }
+  // 令牌本身也要对得上设计稿（写错值同样"很安静"）
+  const tokPath = path.join(SRC, 'themes', 'tokens.ts');
+  if (!existsSync(tokPath)) return { ok: false, detail: '读不到 themes/tokens.ts（判据失去对象）' };
+  const tok = cachedReadText(tokPath);
+  const motion = [
+    ["fast: '140ms'", '基础档 140ms'],
+    ["base: '240ms'", '中间档 240ms'],
+    ["slow: '380ms'", '慢档 380ms'],
+    ["spring: 'cubic-bezier(.22, 1.3, .36, 1)'", '弹簧曲线'],
+    ["springSoft: 'cubic-bezier(.34, 1.4, .64, 1)'", '软弹簧曲线'],
+    ["out: 'cubic-bezier(.16, 1, .3, 1)'", '出向曲线'],
+  ];
+  for (const [needle, label] of motion) {
+    checked += 1;
+    if (!tok.includes(needle)) bad.push(`${label}与设计稿不一致`);
+  }
+  if (checked < 40) bad.push(`只量到 ${checked} 条 transition（应 >= 40）`);
+  return { ok: bad.length === 0, detail: bad.length ? bad.join('；') : '' };
+});
+
+add('STYLE.modalCardParity', 'STYLE', (s) => {
+  /*
+   * 弹窗卡片的**生效值**来自设计稿的后加载层（`theme.css` 覆盖基础表）：
+   * 32 圆角 / 单层弥散阴影 / 实底 / 蒙层 .28 + blur 9 + saturate 1.1 / 760·440 两档。
+   * 只读基础表会照抄一套界面上不存在的数字（.34 / blur 5 / 680 / 420 / 玻璃底 + --shadow-2），
+   * 本轮就是靠运行时量出来的偏差才发现的 —— 源码级判据必须钉**生效值**。
+   */
+  const css = stripComments(s.styleShardCode?.['components.scss'] || '');
+  const need = [
+    ['border-radius: var(--miao-r-2xl);', '卡片 32 圆角'],
+    ['box-shadow: 0 36px 80px -36px rgba(33, 47, 58, 0.5);', '单层弥散阴影'],
+    ['background: var(--miao-surface);', '实底（不再是玻璃底）'],
+    ['border: 1px solid var(--miao-line);', '实线边框'],
+    ['background: rgba(33, 47, 58, 0.28);', '蒙层底色 .28'],
+    ['  backdrop-filter: blur(9px) saturate(1.1);', '蒙层 blur 9 + saturate（前缀两空格：`-webkit-` 那行不算）'],
+    ['width: min(760px, calc(100vw - 40px));', 'is-wide 档'],
+    ['width: min(440px, 100%);', 'is-narrow 档'],
+  ];
+  const bad = [];
+  const cardBlock = (css.match(/\.modal-card\s*\{[^}]*\}/) || [''])[0];
+  const maskBlock = (css.match(/\.modal-mask\s*\{[^}]*\}/) || [''])[0];
+  const wideBlock = (css.match(/\.modal-card\.is-wide\s*\{[^}]*\}/) || [''])[0];
+  const narrowBlock = (css.match(/\.modal-card\.is-narrow\s*\{[^}]*\}/) || [''])[0];
+  const scopes = [cardBlock, maskBlock, wideBlock, narrowBlock];
+  if (scopes.some((b) => !b)) return { ok: false, detail: '四段规则里有读不到的（判据失去对象）' };
+  for (const [needle, label] of need) {
+    if (!scopes.some((b) => b.includes(needle))) bad.push(`${label} 不在设计稿生效值上`);
+  }
+  // 被覆盖掉的旧值不许还留着（留着就说明有人拿基础表当准绳又抄回来）
+  for (const stale of ['rgba(30, 32, 36, 0.34)', 'blur(5px)', 'min(680px', 'min(420px']) {
+    if (cardBlock.includes(stale) || maskBlock.includes(stale)) bad.push(`残留旧值 ${stale}`);
+  }
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
+add('DIALOG.useSharedModal', 'DIALOG', (s) => {
+  /*
+   * 两个手写浮层（登录 / 桌面歌词设置）曾各自实现一遍"蒙层 + 卡片 + 头部 + 动作条"，
+   * 结果是宽度、圆角、阴影各差一档、蒙层没有模糊、退场动画缺失。
+   * 判据：两个弹窗都必须消费通用 `Modal` 单元，且样式分片里不许再出现那套手写外壳类名。
+   */
+  const files = {
+    login: path.join(SRC, 'screens', 'music', 'LoginModal.tsx'),
+    dlset: path.join(SRC, 'screens', 'music', 'DesktopLyricsSettingsModal.tsx'),
+  };
+  const bad = [];
+  let checked = 0;
+  for (const [label, p] of Object.entries(files)) {
+    if (!existsSync(p)) return { ok: false, detail: `读不到 ${label}` };
+    const code = cachedReadText(p);
+    checked += 1;
+    if (!/<Modal\b/.test(code)) bad.push(`${label} 没有用通用 Modal 单元`);
+    if (!/from '@components\/units'/.test(code)) bad.push(`${label} 没从 units 桶导入`);
+  }
+  const musicCss = stripComments(s.styleShardCode?.['music.scss'] || '');
+  for (const dead of ['.music-login-overlay', '.music-dlset-overlay', '.music-dlset-hd', '.music-login-hd']) {
+    checked += 1;
+    if (musicCss.includes(dead)) bad.push(`样式分片里还留着 ${dead}（手写外壳的残骸）`);
+  }
+  // 登录弹窗页脚那句"凭证在哪"是设计稿 `.login-foot` 的原话，本轮之前整句缺失
+  if (!cachedReadText(files.login).includes('登录凭证仅保存在本机；喵坞不会获取你的密码')) {
+    checked += 1;
+    bad.push('登录弹窗缺少设计稿页脚说明');
+  }
+  if (checked < 6) bad.push(`只量到 ${checked} 项（应 >= 6）`);
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
+add('DIALOG.logBlockCopy', 'DIALOG', (s) => {
+  /*
+   * 日志块：**一处实现、两处复用**，且复制按钮三要素齐备（图标-only + 无障碍名 + 悬停与聚焦都能拿到）。
+   *
+   * 🔴 分母写死（`checked >= 13`）：只判"文件存在"是最容易变成空断言的一种判据 ——
+   *    把组件删了它照样绿。所以逐条量到具体要素，少一项就红。
+   */
+  const logBlock = s.units.get('LogBlock.tsx');
+  if (!logBlock) return { ok: false, detail: 'units/LogBlock.tsx 不存在' };
+  const code = logBlock.stripped;
+  const css = stripComments(s.styleShardCode?.['components.scss'] || '');
+  const bad = [];
+  let checked = 0;
+
+  // ① 必须走通用 `Btn`（工程纪律第 12 条：不在各屏自造同类 DOM）
+  checked += 1;
+  if (!/<Btn\b/.test(code)) bad.push('复制按钮没有走通用 Btn 单元');
+  checked += 1;
+  if (/<button\b/.test(code)) bad.push('LogBlock 里仍有裸 <button>');
+
+  // ② 图标-only + 无障碍名 + title（可见文字为空时两者都必填）
+  checked += 1;
+  if (!/ariaLabel="复制全部日志"/.test(code)) bad.push('复制按钮缺 aria-label');
+  checked += 1;
+  if (!/title="复制全部日志"/.test(code)) bad.push('复制按钮缺 title');
+
+  // ③ 复制的是**全文**，且走**注入的接缝**（桌面由宿主插件执行）
+  checked += 1;
+  if (!/if \(copy\) await copy\(text\);|await copy\(text\)/.test(code)) bad.push('复制没有走注入的接缝');
+  checked += 1;
+  if (!/await copy\(text\);/.test(code) || !/else await navigator\.clipboard/.test(code)) {
+    bad.push('复制缺少"接缝优先、浏览器回退"的两条路');
+  }
+
+  // ④ 样式：默认隐藏 + 悬停**与聚焦**都能浮现（只写 :hover 等于键盘拿不到）
+  checked += 1;
+  if (!/\.log-copy\s*\{[^}]*opacity:\s*0/.test(css)) bad.push('.log-copy 默认不是隐藏的');
+  checked += 1;
+  if (!/\.log-block:hover \.log-copy/.test(css)) bad.push('悬停不浮现复制按钮');
+  checked += 1;
+  if (!/\.log-block:focus-within \.log-copy/.test(css)) bad.push('聚焦不浮现复制按钮（键盘用户拿不到）');
+
+  // ⑤ 两处调用点都必须真的用它（不是"单元在、页面还手写着老样子"）
+  const callers = [
+    path.join(SRC, 'screens', 'manga', 'notready', 'AssemblyForm.tsx'),
+    path.join(SRC, 'screens', 'manga', 'notready', 'ServiceForm.tsx'),
+    path.join(SRC, 'screens', 'engine', 'DownloadPanel.tsx'),
+  ];
+  for (const f of callers) {
+    checked += 2;
+    const src = cachedReadText(f);
+    if (!/<LogBlock\b/.test(src)) bad.push(`${path.basename(f)} 没有用 LogBlock`);
+    if (/className="(?:nr-log|ed-log)"/.test(src)) bad.push(`${path.basename(f)} 仍手写旧日志块`);
+    // 🔴 只判"用了 LogBlock"不够：漏掉注入时按钮在、点了走回浏览器 API，打包后静默失败
+    if (!/copy=\{copyText\}/.test(src)) bad.push(`${path.basename(f)} 没有注入 copyText`);
+  }
+
+  if (checked < 13) bad.push(`只量到 ${checked} 项（应 >= 13）`);
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
+add('DIALOG.queueDrawerParity', 'DIALOG', (s) => {
+  /*
+   * 播放队列抽屉：容器必须复用通用 `SideDrawer`（原先手写了一套 348 宽、无圆角、
+   * 蒙层不模糊、横穿一屏进场的 `.music-drawer`），内容按设计稿的 `.qd-*` 三层。
+   * 数值钉设计稿的**生效值**：362 宽 / 左侧 24 圆角 / 头 18 20 12 / 正文 0 12 16 / 行 r9 / 封面 32·r7。
+   */
+  const tsx = cachedReadText(path.join(SRC, 'screens', 'music', 'QueueDrawer.tsx'));
+  const css = stripComments(s.styleShardCode?.['music.scss'] || '');
+  const base = stripComments(tsx);
+  const bad = [];
+  let checked = 0;
+  const need = [
+    ['<SideDrawer', '必须复用通用抽屉单元'],
+    ['drawerClass="queue-drawer"', '必须挂队列抽屉的修饰类'],
+    ['playModeLabel(playMode)', '副标题要带播放模式（设计稿 `N 首 · 模式`）'],
+    ['kind="text"', '「清空」是文字按钮（设计稿 `.text-btn`）'],
+  ];
+  for (const [needle, label] of need) {
+    checked += 1;
+    if (!base.includes(needle)) bad.push(label);
+  }
+  const cssNeed = [
+    ['.queue-drawer {', '缺少 `.queue-drawer` 修饰类'],
+    ['width: min(362px, 100vw);', '宽度应为 362'],
+    ['border-radius: 24px 0 0 24px;', '左侧 24 圆角'],
+    ['padding: 18px 20px 12px;', '头部内边距'],
+    ['padding: 0 12px 16px;', '正文内边距'],
+    ['@block:.qd-row.is-current@:background: var(--miao-primary-soft);', '选中行取 `--primary-soft`'],
+    ['border-radius: 9px;', '行的 9 圆角'],
+    ['width: 32px;', '行封面 32'],
+    ['border-radius: 7px;', '行封面 7 圆角'],
+  ];
+  for (const [needle, label] of cssNeed) {
+    checked += 1;
+    if (needle.startsWith('@block:')) {
+      // `@block:<sel>@:<decl>` —— 只在那个规则块内找。同一令牌在别处也出现时，全片 includes 等于没测
+      const [sel, decl] = needle.slice('@block:'.length).split('@:');
+      const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, (m) => '\\' + m);
+      const block = (css.match(new RegExp(esc + '\\s*\\{[^}]*\\}')) || [''])[0];
+      if (!block || !block.includes(decl)) bad.push(label);
+    } else if (!css.includes(needle)) {
+      bad.push(label);
+    }
+  }
+  // 手写外壳的残骸不许回来
+  for (const dead of ['.music-drawer {', '.music-drawer-bd', '.music-qrow']) {
+    checked += 1;
+    if (css.includes(dead)) bad.push(`手写外壳残留 ${dead}`);
+  }
+  if (checked < 15) bad.push(`只量到 ${checked} 项（应 >= 15）`);
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
+add('DIALOG.queueToasts', 'DIALOG', (s) => {
+  /*
+   * 设计稿清空队列是**两行**提示（`播放已关闭` / `队列已清空`），移除最后一项是**一行**；
+   * 而内部兜底清空（播放失败 / 启动恢复失败）不该冒充用户操作 ⇒ 必须有 `silent` 开关。
+   * 这两件事一起钉：只钉文案会把"兜底也弹提示"这种骚扰放过去。
+   */
+  const queue = stripComments(cachedReadText(path.join(SRC, 'modules', 'music', 'actions', 'queue.ts')));
+  const toast = stripComments(cachedReadText(path.join(SRC, 'screens', 'music', 'Toast.tsx')));
+  const bad = [];
+  let checked = 0;
+  const need = [
+    ["get().toast('播放已关闭', 'info', '队列已清空')", '清空队列的两行提示'],
+    ["get().toast('队列已清空', 'info')", '移除最后一项的一行提示'],
+    ['clearQueue: (silent = false)', '清空必须带 silent 开关'],
+    ['if (!silent) get().toast(', '只有非静默才提示'],
+  ];
+  for (const [needle, label] of need) {
+    checked += 1;
+    if (!queue.includes(needle)) bad.push(label);
+  }
+  // 转发器必须把说明行透传出去（否则第二行永远不出现）
+  checked += 1;
+  if (!toast.includes('toastBus.push(musicToast.message, kind, musicToast.sub)')) {
+    bad.push('转发器没把说明行传给总线');
+  }
+  checked += 1;
+  if (!toast.includes("musicToast.type === 'info' ? 'info'")) bad.push('info 语义没映射');
+  if (checked < 6) bad.push(`只量到 ${checked} 项（应 >= 6）`);
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
+add('STYLE.drawerAndTextBtn', 'STYLE', (s) => {
+  /*
+   * 抽屉单元与文字按钮的**生效值**：蒙层同弹窗（`theme.css` 的 .28 + blur 9 + saturate 1.1），
+   * 进场是 `drawer-in` 的"只滑 24px 并从 .6 淡入"，`.text-btn` 是 28 高 / 0 8 / 12px。
+   * 三条都是实测出来的偏差（蒙层 2px、滑 18px 且从 0 淡入、文字按钮 23 高）。
+   * ⚠️ 字号随全局阶梯调整（11.5 → 12，2026-10-24），判据同步；同时按钮统一不加粗。
+   */
+  const css = stripComments(s.styleShardCode?.['components.scss'] || '');
+  const mask = (css.match(/\.ui-drawer-mask\s*\{[^}]*\}/) || [''])[0];
+  const btn = (css.match(/\.text-btn\s*\{[^}]*\}/) || [''])[0];
+  const anim = (css.match(/@keyframes ui-drawer-in\s*\{[\s\S]*?\n\}/) || [''])[0];
+  const bad = [];
+  let checked = 0;
+  if (!mask) return { ok: false, detail: '读不到 `.ui-drawer-mask`' };
+  if (!btn) return { ok: false, detail: '读不到 `.text-btn`' };
+  if (!anim) return { ok: false, detail: '读不到 `ui-drawer-in`' };
+  const need = [
+    [mask, 'background: rgba(33, 47, 58, 0.28);', '抽屉蒙层底色'],
+    [mask, '  backdrop-filter: blur(9px) saturate(1.1);', '抽屉蒙层模糊（前缀两空格：`-webkit-` 那行不算）'],
+    [btn, 'height: 28px;', '文字按钮 28 高'],
+    [btn, 'padding: 0 8px;', '文字按钮左右 8'],
+    [btn, 'font-size: 12px;', '文字按钮 12px'],
+    [btn, 'font-weight: 400;', '文字按钮不加粗'],
+    [anim, 'translateX(24px)', '进场位移 24px'],
+    [anim, 'opacity: 0.6;', '进场起始透明度 .6'],
+  ];
+  for (const [block, needle, label] of need) {
+    checked += 1;
+    if (!block.includes(needle)) bad.push(label);
+  }
+  if (checked < 7) bad.push(`只量到 ${checked} 项（应 >= 7）`);
+  return { ok: bad.length === 0, detail: bad.join('；') };
+});
+
 add('STYLE.noScssSyntax', 'STYLE', (s) => {
   // 分片内保持**扁平写法**：本阶段不用 SCSS 语法糖。
   // 理由不是审美，是断言：本仓检查脚本大量用 `[^}]*` 取块，嵌套会改变块结构 →
   // 判据静默失效或恒红。（开 nesting 的前置条件是给脚本装 SCSS AST 解析器，
   //  留待后续单独评估 —— 见 docs/internal/style-scss-plan.md。）
-  // 同时禁 SCSS 变量承载颜色：令牌只走 var(--md-*)，否则「深色模式只换变量」不成立。
+  // 同时禁 SCSS 变量承载颜色：令牌只走 var(--md-*) / var(--miao-*)，否则「深色模式只换变量」不成立。
   const hits = [];
   for (const [file, code] of Object.entries(s.styleShardCode || {})) {
     const mixin = code.match(/@(mixin|include)\b/g);
     if (mixin) hits.push(`${file} 用了 @${mixin[0].slice(1)}`);
     const svar = code.match(/\$[a-zA-Z_][\w-]*\s*:/g);
-    if (svar) hits.push(`${file} 用了 SCSS 变量 ${svar[0].trim()}（令牌只走 var(--md-*)）`);
+    if (svar) hits.push(`${file} 用了 SCSS 变量 ${svar[0].trim()}（令牌只走 var(--md-*) / var(--miao-*)）`);
     const amp = code.match(/(^|[{,\n])\s*&(?![\w-])/m);
     if (amp) hits.push(`${file} 用了嵌套选择器 &`);
+  }
+  return { ok: hits.length === 0, detail: hits.length ? hits.join('；') : '' };
+});
+
+/*
+ * STYLE.noRetiredSelectors —— **退役类名不许再被断言引用**。
+ *
+ * 为什么需要这条：类名一改，断言里的 `querySelector('.旧名')` 就选不到东西，
+ * 而多数判据的写法是「选不到就跳过」⇒ **永久假绿**。这个坑本仓踩了两次：
+ *   · `spec-check.ts` 的 C9：`.viewtabs .viewtab` 在页签改成 `.ui-vtab` 后选空，
+ *     C9 从此没在检查任何东西（D-408）；
+ *   · `ia-structure-check` 的 C9：同一个选择器，同样是"空集合 return true"。
+ *
+ * 判据是**禁用词**而不是"扫描所有选择器是否都存在"：后者要区分"合成夹具自造的类名"
+ * 与"产品真实类名"，误报面太大；而退役名单是**有限且明确**的，零误报。
+ * 新增退役类名时把它加进 RETIRED 即可。
+ */
+add('STYLE.noRetiredSelectors', 'STYLE', () => {
+  const RETIRED = [
+    'viewtab', // → ui-vtab（通用单元）
+    'tab-ink', // 分段控件不用滑动下划线
+    'lightbox-x', // 关闭键并入头带
+    'lightbox-hint', // 提示并入 34px 脚带
+    'view-tab-aside', // → ui-vtab-aside
+    'ms-tabs', // → ui-vtabs
+    'ms-tab', // → ui-vtab
+  ];
+  const roots = [path.join(APP, 'e2e'), path.join(SRC, 'tools')];
+  const files = roots.flatMap((r) => walkPaths(r)).filter((f) => !f.endsWith('units-structure-check.mjs'));
+  const hits = [];
+  for (const f of files) {
+    if (!/\.(mjs|ts)$/.test(f)) continue;
+    const code = stripComments(readMaybe(f));
+    /*
+     * 只扫**选择器实参**（`querySelector*` / `closest` / `matches` 的第一个字符串字面量），
+     * 不扫整个文件：`stripComments` 是状态机（反引号会让它失同步，见 D-110），
+     * 全文件扫会把**说明文字里的旧名**也算进来 —— 那是合理的历史叙述，不该判红。
+     */
+    const args = [...code.matchAll(/(?:querySelector(?:All)?|closest|matches)\(\s*(['"`])([^'"`]*)\1/g)].map(
+      (m) => m[2],
+    );
+    for (const name of RETIRED) {
+      // 词边界：`.viewtabs` 不能命中 `viewtab`
+      const re = new RegExp(`\\.${name}(?![\\w-])`);
+      if (args.some((a) => re.test(a))) hits.push(`${path.relative(APP, f)} 的选择器仍引用退役类名 .${name}`);
+    }
   }
   return { ok: hits.length === 0, detail: hits.length ? hits.join('；') : '' };
 });
@@ -1240,7 +1863,6 @@ function runAll(s, ids) {
   }
   return res;
 }
-
 const GROUPS = [
   'LAYOUT',
   'PURITY',
@@ -1255,6 +1877,7 @@ const GROUPS = [
   'TOOLTIP',
   'ZOOM',
   'STYLE',
+  'DIALOG',
 ];
 function printGrouped(res) {
   let pass = 0;
@@ -1281,6 +1904,20 @@ function printGrouped(res) {
 // ── 反证用例 ──────────────────────────────────────────────────────────────
 // 三种破坏动作：edit（改文本）/ rename（改名，模拟清单缺件）/ create（复活旧路径）
 const MUTATIONS = [
+  {
+    name: 'LogBlock 的复制按钮退回裸 <button>（绕过通用 Btn 单元）',
+    file: F.units + '/LogBlock.tsx',
+    find: '<Btn',
+    replace: '<button',
+    expect: ['DIALOG.logBlockCopy'],
+  },
+  {
+    name: '摘掉 .log-block:hover 的复制按钮浮现（按钮在，但永远看不见）',
+    file: path.join(SRC, 'styles', 'components.scss'),
+    find: '.log-block:hover .log-copy,',
+    replace: '.log-block-hover-disabled .log-copy,',
+    expect: ['DIALOG.logBlockCopy'],
+  },
   {
     name: '把 units/VirtualList.tsx 改名（模拟清单缺件）',
     from: F.units + '/VirtualList.tsx',
@@ -1360,9 +1997,8 @@ const MUTATIONS = [
   {
     name: '把 LoginModal.tsx 改回 <button className="music-cbtn">',
     file: F.loginModal,
-    find: '          <IconButton title="关闭" onClick={closeLogin}>\n            <X size={15} />\n          </IconButton>',
-    replace:
-      '          <button type="button" className="music-cbtn" onClick={closeLogin}>\n            <X size={15} />\n          </button>',
+    find: '退出登录',
+    replace: '<button type="button" className="music-cbtn">退出登录</button>',
     expect: ['CALLERS.loginNoRawCbtn'],
   },
   {
@@ -1431,7 +2067,13 @@ const MUTATIONS = [
     name: '把 hooks/useCoverColor.ts 移回 screens/music（模拟 use* 未收口）',
     from: F.hooksDir + '/useCoverColor.ts',
     to: path.join(SRC, 'screens', 'music', 'useCoverColor.ts'),
-    expect: ['HOOKS.noMisplacedUse'],
+    /*
+     * 移动后真正会红的是两条：散落的 use*（`HOOKS.noMisplacedUse`）与
+     * hooks 目录缺项（`HOOKS.layout`）。
+     * ⚠️ 不要再把 `CALLERS.importsUnits` 列进来 —— 那条查的是"UI 调用点是否从 units 引"，
+     * 与 use* 放哪儿无关；列进来会变成"该红没红"的假失败。
+     */
+    expect: ['HOOKS.noMisplacedUse', 'HOOKS.layout'],
   },
   {
     name: '从 vite.config.ts 删掉 @hooks 别名（模拟两处漏改一处）',
@@ -1443,14 +2085,14 @@ const MUTATIONS = [
   {
     name: '从 tsconfig.json 删掉 @music 别名（两条一起删，反向漂移：tsc 不认识而 vite 认识）',
     file: F.tsconfig,
-    find: '      "@music": ["src/music"],\n      "@music/*": ["src/music/*"],\n',
+    find: '      "@music": ["src/modules/music"],\n      "@music/*": ["src/modules/music/*"],\n',
     replace: '',
     expect: ['ALIAS.keysComplete', 'ALIAS.twoPlaceSync'],
   },
   {
     name: '只删 tsconfig 的 @music/* 通配项（配置退化：别名还在，但 @music/store 解析不到）',
     file: F.tsconfig,
-    find: '      "@music/*": ["src/music/*"],\n',
+    find: '      "@music/*": ["src/modules/music/*"],\n',
     replace: '',
     expect: ['ALIAS.subPathMaps'],
   },
@@ -1477,7 +2119,7 @@ const MUTATIONS = [
   },
   {
     name: '把 store.ts 的 zustand 依赖换掉（模拟状态库不再是 zustand）',
-    file: path.join(SRC, 'music', 'store.ts'),
+    file: path.join(SRC, 'modules', 'music', 'store.ts'),
     find: "from 'zustand';",
     replace: "from 'zustand-gone';",
     expect: ['STATE.zustandInUse'],
@@ -1523,11 +2165,11 @@ const MUTATIONS = [
     expect: ['ISLAND.musicToastForwards'],
   },
   {
-    name: '把胶囊形变时长改成 CSS 0.4s ↔ TS 320ms 不一致（动画半途被内联宽高瞬移）',
+    name: '把胶囊形变时长改成 CSS 0.4s ↔ TS 380ms 不一致（动画半途被内联宽高瞬移）',
     file: F.musicScss,
     // 锚点取 transition 里的 width 段。判据取的是同一处，故改它必然触发红
-    find: '    width 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),',
-    replace: '    width 0.4s cubic-bezier(0.22, 0.61, 0.36, 1),',
+    find: '    width 0.38s var(--miao-ease-spring),',
+    replace: '    width 0.4s var(--miao-ease-spring),',
     expect: ['ISLAND.morphDurationSync'],
   },
   {
@@ -1597,7 +2239,10 @@ const MUTATIONS = [
     // 去掉按钮 = macOS 上完全没法缩放（捏合被 WebKit 吃掉，事件到不了 JS）
     name: '删掉工具栏的缩小按钮（macOS 上失去唯一的非手势缩放路径）',
     file: F.libraryViewer,
-    find: '              aria-label="缩小"\n',
+    // 锚点只取属性行本身，不带缩进 —— 工具栏从"条件渲染"改成"常驻淡出"后整体缩进变过一层，
+    // 带缩进的锚点会直接失配（跳过 ≠ 通过）。
+    // 属性名跟着实现走：按钮改走 `Btn` 单元后是无障碍名走 `ariaLabel` 而不是裸 `aria-label`。
+    find: 'ariaLabel="缩小"\n',
     replace: '',
     expect: ['ZOOM.buttonFallback'],
   },
@@ -1722,13 +2367,157 @@ const MUTATIONS = [
     // 放错分片的真实动机是「懒得翻文件」，所以反证就模拟这个动作
     name: '把音乐的选择器塞进 manga.scss（模块私有样式放错分片）',
     file: path.join(F.stylesDir, 'manga.scss'),
-    find: '/* ================================================================ X-C1 任务队列 */',
+    find: '/* ================================================================ X-C1 任务队列\n',
     replace:
-      '.music-queue-fake { color: red; }\n/* ================================================================ X-C1 任务队列 */',
+      '.music-queue-fake { color: red; }\n/* ================================================================ X-C1 任务队列\n',
     expect: ['STYLE.shardOwnership'],
   },
   {
-    name: '在分片里用 SCSS 变量承载颜色（令牌只走 var(--md-*)，否则深色模式就不成立了）',
+    // 这正是本轮真修掉的缺陷：CSS 用了 `--miao-accent-ink`，tokens 里却没有它
+    name: '把 --miao-accent-ink 的定义删掉（CSS 五处还在用 ⇒ 声明整条失效、颜色静默回落）',
+    file: path.join(SRC, 'themes', 'tokens.ts'),
+    find: "  out['--miao-accent-ink'] = mode === 'dark' ? '#EFC4A4' : '#BE7F57';\n",
+    replace: '',
+    expect: ['STYLE.tokensDefined'],
+  },
+  {
+    // 同一类缺陷的另一层：TSX 里的令牌名是**字符串字面量**，tsc 抓不到（本轮判据特意扩到这一层）
+    name: '把 manga 状态色写成 --md-sucess（少一个 s；tsc 不报、Dot 只是没颜色）',
+    file: path.join(SRC, 'screens', 'manga', 'chapters.tsx'),
+    find: "  done: '--md-success',",
+    replace: "  done: '--md-sucess',",
+    expect: ['STYLE.tokensDefined'],
+  },
+  {
+    name: '给语义令牌挂一个兜底值（把"令牌没定义"盖成"颜色偏灰"，正是上一条判据的掩体）',
+    file: path.join(F.stylesDir, 'settings.scss'),
+    find: '  color: var(--miao-accent-ink);\n',
+    replace: '  color: var(--miao-accent-ink, var(--miao-muted));\n',
+    expect: ['STYLE.noSilentTokenFallback'],
+  },
+  {
+    // 这正是本轮真修掉的：`.icon-btn` 曾把设计稿的"小档"（28 / r8）当成默认档
+    name: '把图标按钮退回 28×28（设计稿默认是 34×34 / r10，`.icon-btn-sm` 才是 28）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  width: 34px;\n  height: 34px;\n  border: none;\n  border-radius: 10px;',
+    replace: '  width: 28px;\n  height: 28px;\n  border: none;\n  border-radius: 8px;',
+    expect: ['STYLE.sharedControlGeometry'],
+  },
+  {
+    // 同上：色点曾是小 1px、还不是正圆、也没有那层 2px 抠边
+    name: '把色点退回 16 / r9 / 1px 描边（设计稿是 17 / 正圆 / 2px 抠边）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  width: 17px;\n  height: 17px;\n  padding: 0;\n  border: 2px solid var(--miao-surface);\n  border-radius: 50%;',
+    replace:
+      '  width: 16px;\n  height: 16px;\n  padding: 0;\n  border: 1px solid var(--miao-line);\n  border-radius: 9px;',
+    expect: ['STYLE.sharedControlGeometry'],
+  },
+  {
+    // 本轮真撞上的缺陷：同一选择器在两个分片各有一份，后到的 components 静默盖住 settings
+    name: '把 .set-ctl-note 的第二份定义加回 components.scss（改 settings 里那份就再也不生效）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '.ui-vlist-item {\n  position: absolute;',
+    replace:
+      '.set-ctl-note {\n  font-size: 9px;\n  color: var(--miao-faint);\n}\n.ui-vlist-item {\n  position: absolute;',
+    expect: ['STYLE.setCtlNoteSingleSource'],
+  },
+  {
+    name: '把控件旁注解从 9.5px 改成 9px（设计稿设置在 theme-music 那层的生效值就是 9.5）',
+    file: path.join(F.stylesDir, 'settings.scss'),
+    find: '.set-ctl-note {\n  font-size: 9.5px;',
+    replace: '.set-ctl-note {\n  font-size: 9px;',
+    expect: ['STYLE.setCtlNoteSingleSource'],
+  },
+  {
+    name: '把某条 hover 过渡的时长写回 0.15s（绕开 --miao-dur-fast，改令牌时它不会跟着动）',
+    file: path.join(F.stylesDir, 'settings.scss'),
+    find: '  transition:\n    background var(--miao-dur-fast),\n    color var(--miao-dur-fast);',
+    replace: '  transition:\n    background 0.15s,\n    color 0.15s;',
+    expect: ['STYLE.motionTokensOnly'],
+  },
+  {
+    name: '把中间档时长从 240ms 改成 200ms（界面上只是"快一拍"，没有任何东西会报错）',
+    file: path.join(SRC, 'themes', 'tokens.ts'),
+    find: "  base: '240ms',",
+    replace: "  base: '200ms',",
+    expect: ['STYLE.motionTokensOnly'],
+  },
+  {
+    name: '把弹窗卡片圆角改回 26（基础表的值，设计稿生效值是 32）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  border-radius: var(--miao-r-2xl);',
+    replace: '  border-radius: var(--miao-r-xl);',
+    expect: ['STYLE.modalCardParity'],
+  },
+  {
+    name: '把蒙层模糊改回 blur(5px)（基础表的旧值，界面只是"糊得不够"）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  backdrop-filter: blur(9px) saturate(1.1);',
+    replace: '  backdrop-filter: blur(5px);',
+    within: '.modal-mask {',
+    expect: ['STYLE.modalCardParity'],
+  },
+  {
+    name: '把登录弹窗退回手写外壳（复制一张卡片，改一处不会同步）',
+    file: path.join(F.stylesDir, 'music.scss'),
+    find: '.login-card {',
+    replace: '.music-login-overlay {\n  position: fixed;\n  inset: 0;\n}\n.login-card {',
+    expect: ['DIALOG.useSharedModal'],
+  },
+  {
+    name: '把队列抽屉的宽度改回手写版 348（比例看不出，数值能）',
+    file: path.join(F.stylesDir, 'music.scss'),
+    find: '  width: min(362px, 100vw);',
+    replace: '  width: 348px;',
+    expect: ['DIALOG.queueDrawerParity'],
+  },
+  {
+    name: '把队列抽屉的选中底色换回暖橙（令牌用错，肉眼"更符合品牌"）',
+    file: path.join(F.stylesDir, 'music.scss'),
+    find: '  background: var(--miao-primary-soft);',
+    replace: '  background: var(--miao-accent-soft);',
+    within: '.qd-row.is-current {',
+    expect: ['DIALOG.queueDrawerParity'],
+  },
+  {
+    name: '把文字按钮改回 23 高（旁边 34×34 的关闭键会显得它塌下去）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  height: 28px;\n  padding: 0 8px;',
+    replace: '  padding: 3px 7px;',
+    expect: ['STYLE.drawerAndTextBtn'],
+  },
+  {
+    name: '把抽屉蒙层改回 blur(2px)（基础表的旧值）',
+    file: path.join(F.stylesDir, 'components.scss'),
+    find: '  backdrop-filter: blur(9px) saturate(1.1);',
+    replace: '  backdrop-filter: blur(2px);',
+    within: '.ui-drawer-mask {',
+    expect: ['STYLE.drawerAndTextBtn'],
+  },
+  {
+    name: '把清空队列退回"没有反馈"（用户点了不知道发生了什么）',
+    file: path.join(SRC, 'modules', 'music', 'actions', 'queue.ts'),
+    find: "    if (!silent) get().toast('播放已关闭', 'info', '队列已清空');",
+    replace: '    void silent;',
+    expect: ['DIALOG.queueToasts'],
+  },
+  {
+    name: '把档位文案退回光秃秃的 Small（设计稿是 Small · 均衡，后半截是这档的性格）',
+    file: path.join(SRC, 'screens', 'settings', 'engine-api.ts'),
+    find: "  small: 'Small · 均衡',",
+    replace: "  small: 'Small',",
+    expect: ['STYLE.tierLabelSingleSource'],
+  },
+  {
+    name: '让设置屏重新自带一份 TIER_LABEL（投放屏与设置屏各一份，迟早只改一处）',
+    file: path.join(SRC, 'screens', 'settings', 'sections', 'TranslateSection.tsx'),
+    find: '\nexport function TranslateSection',
+    replace:
+      "\nconst TIER_LABEL = { tiny: 'Tiny', small: 'Small', medium: 'Medium' };\n\nexport function TranslateSection",
+    expect: ['STYLE.tierLabelSingleSource'],
+  },
+  {
+    name: '在分片里用 SCSS 变量承载颜色（令牌只走 var(--md-*) / var(--miao-*)，否则深色模式就不成立了）',
     file: path.join(F.stylesDir, 'music.scss'),
     find: '/* ================================================================ 音乐屏',
     replace: '$brand: #ffe066;\n/* ================================================================ 音乐屏',
@@ -1750,6 +2539,21 @@ const refute = process.argv.includes('--refute');
 console.log('公共组件抽离（components/units）结构断言' + (refute ? ' · 反证轮' : ''));
 console.log(`根目录：${ROOT}`);
 console.log(`断言总数：${A.length}（LAYOUT/PURITY/NAMING/CALLERS/KEEP/HOOKS/ALIAS/STATE/ISLAND/TOOLTIP/ZOOM）`);
+
+/**
+ * 在 `within` 标记之后替换第一处出现（不给 within 则从文件头找）。
+ *
+ * 为什么需要它：设计稿生效值会在多个块里重复（蒙层底色 / 模糊在抽屉与弹窗各一份），
+ * 只按"第一处"换会改错块 —— 于是断言看着不灵，其实是变异打错了地方。
+ * 找不到标记或找不到锚点时原样返回，由调用方的 `includes` 预检兜住（跳过 ≠ 通过）。
+ */
+function replaceWithin(text, find, repl, within) {
+  const start = within ? text.indexOf(within) : 0;
+  if (start < 0) return text;
+  const at = text.indexOf(find, start);
+  if (at < 0) return text;
+  return text.slice(0, at) + repl + text.slice(at + find.length);
+}
 
 if (!refute) {
   const res = runAll(loadSources());
@@ -1818,13 +2622,15 @@ if (!refute) {
           const eol = txt.includes('\r\n') ? '\r\n' : '\n';
           const find = mut.find.split('\n').join(eol);
           const repl = mut.replace.split('\n').join(eol);
-          if (!txt.includes(find)) {
+          if (!txt.includes(find) || (mut.within && !txt.includes(mut.within))) {
             console.log(`⚠ ${mut.name}\n    破坏锚点未找到（源文件已变？）—— 本条无法反证`);
             okApply = false;
             skipped += mut.expect.length;
           } else {
             record = { kind: 'edit', file: mut.file, original };
-            overrideFile(mut.file, txt.replace(find, repl)); // 内存破坏，不写磁盘
+            // `nth`：同一串值在多个块里重复出现（蒙层在抽屉与弹窗各一份），
+            // 用第 n 处定位，避免"改错了块"被记成"断言不灵"
+            overrideFile(mut.file, replaceWithin(txt, find, repl, mut.within)); // 内存破坏，不写磁盘
           }
         }
       }

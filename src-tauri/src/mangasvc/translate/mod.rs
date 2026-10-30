@@ -11,7 +11,7 @@
 //
 // ## 落盘路径
 // Node 版靠 `configureTranslate()` 注入两个文件路径（防 ESM 环）。Rust 版没有 ESM 环的问题，
-// 但保留「唯一事实源」的姿态：路径**只**从 `paths::state_dir()` 现算，不在这里手写拼接规则。
+// 但保留「唯一事实源」的姿态：路径**只**从 `paths::manga_state_dir()` 现算，不在这里手写拼接规则。
 pub mod credentials;
 pub mod errors;
 pub mod http;
@@ -48,11 +48,11 @@ const RETRY_BACKOFF_MS: [u64; 2] = [300, 900];
 
 /// 非密钥设置文件（`state/translate-settings.json`）
 pub fn settings_file() -> PathBuf {
-    paths::state_dir().join("translate-settings.json")
+    paths::manga_state_dir().join("translate-settings.json")
 }
 /// 密钥文件（`state/translate-credentials.json`）
 pub fn credentials_file() -> PathBuf {
-    paths::state_dir().join("translate-credentials.json")
+    paths::manga_state_dir().join("translate-credentials.json")
 }
 
 fn utf16_len(s: &str) -> usize {

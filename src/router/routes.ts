@@ -57,6 +57,8 @@ export const SCREEN_ROUTES: ScreenRoute[] = [
     view: v.id,
   })),
   { path: '/music', screen: 'music' },
+  // 番剧：模块内十屏不进制路由（自成工作区），URL 只回答「哪个应用」
+  { path: '/anime', screen: 'anime' },
   { path: '/settings', screen: 'settings' },
 ];
 
@@ -68,9 +70,17 @@ export const OVERLAY_ROUTES: ScreenRoute[] = [
   { path: '/engine-download', screen: 'translate', overlay: 'engine-download' },
 ];
 
-/** 末位斜杠与多余的重复斜杠都不算另一条路由（`/music/` 与 `/music` 同屏） */
+/**
+ * 末位斜杠与多余的重复斜杠都不算另一条路由（`/music/` 与 `/music` 同屏）。
+ *
+ * 🔴 还要**剥掉查询串与片段**：HashRouter 下设置页的深链形如
+ * `#/settings?section=media` —— 查询串是**路径的一部分**传进来的。
+ * 不剥的话 `/settings?section=media` ≠ `/settings`，路由判不中、侧栏高亮也会错，
+ * 最终被兜底路由甩回默认屏（表现就是"深链点了没反应"）。
+ */
 function normalize(pathname: string): string {
-  const p = pathname.replace(/\/{2,}/g, '/');
+  const noQuery = pathname.split('?')[0].split('#')[0];
+  const p = noQuery.replace(/\/{2,}/g, '/');
   return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p;
 }
 

@@ -13,10 +13,17 @@
       "why": "8 路并行（e2e/run-checks.mjs）；这是改一行就能跑的那一层，也是 `npm run check` 的全集。",
       "cmds": [
         { "id": "check:quit", "cmd": "node e2e/quit-command-check.mjs", "desc": "「退出喵坞」没反应的根因钉子（菜单项 / 菜单栏 / 快捷键三处都真的接了退出）", "refute": true },
+        {
+          "id": "check:ui-scale",
+          "cmd": "node e2e/ui-scale-check.mjs",
+          "desc": "字号分档的构建期钉子：插件注册 / dev+build 两钩子 / 换算行为 / 五档数值 / 番剧隔离 / 源码仍写纯 px（D-347）",
+          "refute": true
+        },
         { "id": "check:tls", "cmd": "node e2e/tls-check.mjs", "desc": "reqwest 的 TLS 能力真的可用（D-25）" },
         { "id": "check:ia", "cmd": "node e2e/ia-structure-check.mjs", "desc": "信息架构结构断言（屏级导航 / 侧栏 / 标签 / 返回栈的接线）" },
         { "id": "check:engine-download-entry", "cmd": "node e2e/engine-download-entry-check.mjs", "desc": "引擎下载入口 / 独立下载页 / 完成关闭 / 重启对账（D-233）", "refute": true },
         { "id": "check:music", "cmd": "node e2e/music-platform-check.mjs", "desc": "音乐模块「四平台完整接通」验收（除汽水外）", "refute": true },
+        { "id": "check:anime-module", "cmd": "node e2e/anime-module-check.mjs", "desc": "番剧模块接线：别名 / 路由 / IA / 屏装配 / 命令注册 / manifest 端点 / 设置分组 / 零 Node", "refute": true },
         { "id": "check:settings", "cmd": "node e2e/settings-media-check.mjs", "desc": "设置页五组接线验收：播放·媒体 / 翻译服务 / 运行状态卡 / 功能梳理 / 许可清单", "refute": true },
         { "id": "check:units", "cmd": "node e2e/units-structure-check.mjs", "desc": "「公共组件抽离到 src/components/units/」结构断言（命名 / 依赖方向 / 别名 / 样式分层）", "refute": true },
         { "id": "check:docs", "cmd": "node e2e/docs-consistency-check.mjs", "desc": "文档 ↔ 实现一致性：断言条数 / 引用的命令是否存在 / 禁词 / GROUPS 分组" },
@@ -62,6 +69,7 @@
         { "id": "check:macos-compat", "cmd": "node e2e/service/macos-compat-check.mjs", "desc": "D7 macOS 兼容钉子：解释器形态分平台、Windows 专用脚本在非 Windows 下真拒绝", "refute": true },
         { "id": "check:resilience", "cmd": "node e2e/service/resilience-check.mjs", "desc": "manga-service 健壮性钉子（异常输入 / 边界 / 恢复路径）", "refute": true },
         { "id": "check:paths", "cmd": "node e2e/service/paths-parity-check.mjs", "desc": "F2 路径同源钉子：Rust(paths.rs) 对冻结 golden 快照", "refute": true },
+        { "id": "check:anime", "cmd": "node e2e/service/anime-service-check.mjs", "desc": "D-242 动漫服务进程：与 mangasvc 同时运行 + 落点 / 令牌 / 库隔离", "refute": true },
         { "id": "check:runtime-probe", "cmd": "node e2e/service/runtime-probe-check.mjs", "desc": "B2/B5 运行时就绪检测：五项逐项翻转 + detail 必带绝对路径（只 warn 不 fail）", "refute": true },
         { "id": "check:path-single-source", "cmd": "node e2e/service/path-single-source-check.mjs", "desc": "B3 路径推导单源化：检测侧的 python.path 与启动配方的 cmd[0] 逐字节相同", "refute": true },
         { "id": "check:launch-gate", "cmd": "node e2e/service/launch-gate-check.mjs", "desc": "D6 real 档启动前预检闸门：缺件时一个子进程都不起 + G5 源码钉", "refute": true },
@@ -89,6 +97,7 @@
       "cmds": [
         { "id": "check:e3:real", "cmd": "node e2e/engine/e3-real-full-chain-check.mjs", "desc": "E3 全链路实测（真引擎）：31 张一个 Task 两个 Batch + 落盘 + SSE 一致" },
         { "id": "check:e7:real", "cmd": "node e2e/engine/e7-real-verify-check.mjs", "desc": "E7 模型续传与校验的真机半边：真权重 sha256 跑得完 + 篡改必检出", "refute": true },
+        { "id": "check:anime-kernel:real", "cmd": "node e2e/service/anime-kernel-real-check.mjs", "desc": "番剧内核轨真机半边：真 mpv 跑 --kernel-selftest（17 例）；前置缺一即失败并点名 fetch:mpv", "refute": true },
         { "id": "selftest:app:e11", "cmd": "node e2e/lifespan-selftest.mjs --e11", "desc": "E11 三进程树回收（mock）：SIGKILL 主进程 → 端口全释放", "refute": true },
         { "id": "selftest:app:e11:real", "cmd": "node e2e/lifespan-selftest.mjs --e11 --mode real", "desc": "E11 + E1 生效参数快照（真进程：python + 执行器 + llama-server）" },
         { "id": "check:pydensecrf-wheel-install", "cmd": "node e2e/engine/pydensecrf-wheel-install-check.mjs", "desc": "B4 预编译 wheel 真装一次（--no-index --no-deps 成功 + 真二进制 + 真构造 DenseCRF）" },
@@ -103,6 +112,7 @@
       "why": "产品运行期不跑这些脚本（打包用户机跑的是 mangasvc 自己的出口），故不属于任何分层门；跑它们会改盘上真实落点。",
       "cmds": [
         { "id": "fetch:models", "cmd": "node engine/scripts/fetch-models.mjs", "desc": "S3 模型下载器 CLI（Node 对照端）：--check 只校验 / --link 零网络重建引擎树里的链接" },
+        { "id": "fetch:mpv", "cmd": "node scripts/fetch-mpv.mjs", "desc": "番剧内核轨的 mpv 二进制获取（--check 只在位检查 / --print-url 零网络打印地址；落 src-tauri/resources/mpv/<平台>/）" },
         { "id": "extract:models", "cmd": "node engine/scripts/fetch-models.mjs --extract", "desc": "只解包已下好的归档，不下载（fetch-models.mjs --extract）" },
         { "id": "setup:engine", "cmd": "node engine/scripts/setup-engine.mjs", "desc": "装配引擎运行时到 <appData>/runtimes/manga-translator（拉归档 / 原子解包 / 建 venv / 打补丁）" },
         { "id": "deps:engine", "cmd": "node engine/scripts/install-engine-deps.mjs", "desc": "装引擎 Python 依赖（venv 内 pip；随包预编译 wheel 优先，缺则回退源码编译）" },

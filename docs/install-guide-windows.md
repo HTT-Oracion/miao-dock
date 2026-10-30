@@ -36,10 +36,10 @@
 引擎运行时的落点是：
 
 ```
-%LOCALAPPDATA%\runtimes\manga-translator
+%LOCALAPPDATA%\MiaoDock\manga\runtimes\manga-translator
 ```
 
-典型展开：`C:\Users\<你>\AppData\Local\runtimes\manga-translator`。
+典型展开：`C:\Users\<你>\AppData\Local\MiaoDock\manga\runtimes\manga-translator`。
 
 **先把这件事定下来再动手** —— 因为它决定了后三步往哪儿写、产品往哪儿读。
 查产品实际用的落点（**权威答案，不要靠猜**）：
@@ -55,7 +55,7 @@ mangasvc --print-paths           # 打包版在安装目录里；从仓库自建
 
 1. **落点定了别挪。** 装配脚本与产品读的是同一个落点（B1 起同源），但**装配完成后**把
    `runtimes` 搬走，产品会报「运行时未装配」——因为没有任何机制会跟着搬。
-   真要挪就设 `MIAO_RUNTIME_ROOT` 指向新的运行时根（产品与装配脚本都认这个变量），
+   真要挪就设 `MIAO_MANGA_RUNTIME_ROOT` 指向新的运行时根（产品与装配脚本都认这个变量），
    然后**重跑 §3 的四条命令**。整个 `runtimes` 目录是一个整体，不要只搬其中一半。
 2. **别放同步盘 / 云备份目录。** OneDrive / 坚果云这类工具的「按需下载」会把
    占位符文件留在盘上：路径存在、`stat` 成功、**内容为空**。引擎读到的是 0 字节权重，
@@ -64,10 +64,10 @@ mangasvc --print-paths           # 打包版在安装目录里；从仓库自建
 3. **别放会被清理的临时目录。** `%TEMP%`、下载目录、以及任何被"空间清理"工具瞄上的
    位置都会在某次开机后少掉几个 GB，而症状只是"昨天还好好的"。
 
-> 想把 6.9 GB 放到**别的盘**（C 盘紧张）是合法的 —— 但要用①的 `MIAO_RUNTIME_ROOT`
+> 想把 6.9 GB 放到**别的盘**（C 盘紧张）是合法的 —— 但要用①的 `MIAO_MANGA_RUNTIME_ROOT`
 > 一次性定好，或把 `runtimes` 目录做成**目录联接（junction）**指向别的盘：
 > ```powershell
-> mklink /J "%LOCALAPPDATA%\runtimes" "D:\runtimes"
+> mklink /J "%LOCALAPPDATA%\MiaoDock\manga\runtimes" "D:\runtimes"
 > ```
 > 产品与检测都**跟随**链接（不是把链接本身当目录，见 B2/D-177），所以这条路是支持的。
 
@@ -136,7 +136,7 @@ node -e "const m=require('./engine/models.manifest.json');const f=m.files.filter
 （cu126 构建比 CPU 构建大得多）。装完可以自己量：
 
 ```powershell
-Get-ChildItem -Recurse "$env:LOCALAPPDATA\runtimes\manga-translator" | Measure-Object -Property Length -Sum
+Get-ChildItem -Recurse "$env:LOCALAPPDATA\MiaoDock\manga\runtimes\manga-translator" | Measure-Object -Property Length -Sum
 ```
 
 > 下载总量与落盘量**不是一回事**：`fetch:models` 会在 `<落点>\.download-cache\` 留下一份
@@ -311,7 +311,7 @@ node engine/scripts/install-engine-deps.mjs --build-wheel
 按同一原理回填即可。检查是否已生效：
 
 ```powershell
-& "$env:LOCALAPPDATA\runtimes\manga-translator\venv\Scripts\python.exe" -c "import pydensecrf.densecrf as d; print(d.DIAG_KERNEL, d.NO_NORMALIZATION)"
+& "$env:LOCALAPPDATA\MiaoDock\manga\runtimes\manga-translator\venv\Scripts\python.exe" -c "import pydensecrf.densecrf as d; print(d.DIAG_KERNEL, d.NO_NORMALIZATION)"
 ```
 
 ### 5.3 装了 CUDA 却走了 CPU / 首图特别慢
@@ -319,7 +319,7 @@ node engine/scripts/install-engine-deps.mjs --build-wheel
 引擎按 `--use-gpu` + 档位决定后端。先确认 torch 看得见卡：
 
 ```powershell
-& "$env:LOCALAPPDATA\runtimes\manga-translator\venv\Scripts\python.exe" -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '-')"
+& "$env:LOCALAPPDATA\MiaoDock\manga\runtimes\manga-translator\venv\Scripts\python.exe" -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else '-')"
 ```
 
 `False` ⇒ 装的是 CPU 构建的 torch，或驱动太旧。venv 里那份 torch 是
@@ -357,8 +357,8 @@ $env:PYTHONIOENCODING = "utf-8"
   同一相对位置，省一次下载 —— 拷完跑 `fetch:models --check` 验校验和。
 - **卸载喵坞**：卸载时会**问你一句**「要不要一并删除翻译引擎运行时」，并列出它的完整路径与
   「常见 10 GB 以上、重装一次要几十分钟」。**默认是保留**（回车 / 误触都落在保留那一支），
-  只有明确点「是」才会删 `<appData>\runtimes\manga-translator\`。
-  ⇒ 选保留之后想清理，手动删掉该目录即可；你的作品目录（`%USERPROFILE%\Pictures\Box 漫画`）
+  只有明确点「是」才会删 `<appData>\MiaoDock\manga\runtimes\manga-translator\`。
+  ⇒ 选保留之后想清理，手动删掉该目录即可；你的作品目录（`%USERPROFILE%\Pictures\MiaoDock Mangas`）
   卸载程序**永不**触碰。
 
 ---

@@ -43,10 +43,10 @@
 引擎运行时的落点是：
 
 ```
-~/Library/Application Support/runtimes/manga-translator
+~/Library/Application Support/MiaoDock/manga/runtimes/manga-translator
 ```
 
-完整路径是 `/Users/<你>/Library/Application Support/runtimes/manga-translator`。
+完整路径是 `/Users/<你>/Library/Application Support/MiaoDock/manga/runtimes/manga-translator`。
 （`~/Library` 在 Finder 里默认隐藏：按住 `⌥` 点「前往」菜单即可看到「资源库」。）
 
 **先把这件事定下来再动手** —— 因为它决定了后三步往哪儿写、产品往哪儿读。
@@ -63,7 +63,7 @@ mangasvc --print-paths           # 打包版在 .app 的资源目录里；从仓
 
 1. **落点定了别挪。** 装配脚本与产品读的是同一个落点（B1 起同源），但**装配完成后**把
    `runtimes` 搬走，产品会报「运行时未装配」——因为没有任何机制会跟着搬。
-   真要挪就设 `MIAO_RUNTIME_ROOT` 指向新的运行时根（产品与装配脚本都认这个变量），
+   真要挪就设 `MIAO_MANGA_RUNTIME_ROOT` 指向新的运行时根（产品与装配脚本都认这个变量），
    然后**重跑 §3 的四条命令**。整个 `runtimes` 目录是一个整体，不要只搬其中一半。
 2. **别放同步盘 / 云备份目录。** iCloud Drive 的「优化 Mac 储存空间」会把文件换成
    占位符：路径存在、`stat` 成功、**内容为空**。引擎读到的是 0 字节权重，报错离根因极远。
@@ -72,10 +72,10 @@ mangasvc --print-paths           # 打包版在 .app 的资源目录里；从仓
 3. **别放会被清理的临时目录。** `/tmp`、`~/Downloads`、以及任何被"清理工具"瞄上的位置
    都会在某次重启后少掉几个 GB，而症状只是"昨天还好好的"。
 
-> 想把 6.3 GiB 放到**外置盘**（内置盘紧张）是合法的 —— 但要用①的 `MIAO_RUNTIME_ROOT`
+> 想把 6.3 GiB 放到**外置盘**（内置盘紧张）是合法的 —— 但要用①的 `MIAO_MANGA_RUNTIME_ROOT`
 > 一次性定好，或者把 `runtimes` 做成**符号链接**指向外置盘：
 > ```bash
-> ln -s /Volumes/ExtSSD/runtimes "$HOME/Library/Application Support/runtimes"
+> ln -s /Volumes/ExtSSD/runtimes "$HOME/Library/Application Support/MiaoDock/manga/runtimes"
 > ```
 > 产品与检测都**跟随**链接（不是把链接本身当目录，见 B2/D-177），所以这条路是支持的。
 > ⚠️ 外置盘拔掉后产品会报「运行时未装配」——这是正确行为，不是 bug。
@@ -123,7 +123,7 @@ node -e "const m=require('./engine/models.manifest.json');const f=m.files.filter
 ⇒ 按 **13 GB 以上**预留。装完可以自己量：
 
 ```bash
-du -sh "$HOME/Library/Application Support/runtimes/manga-translator"
+du -sh "$HOME/Library/Application Support/MiaoDock/manga/runtimes/manga-translator"
 ```
 
 > 下载总量与落盘量**不是一回事**：`fetch:models` 会在 `<落点>/.download-cache/` 留下一份
@@ -149,7 +149,7 @@ npm run task -- extract:models   # ④ 解包归档 → bin/llama/llama-b11417/l
 `INCLUDE`/`LIB`/`PATH`，还要绕开 `vcvars64.bat`）。macOS 上直接手动装：
 
 ```bash
-RT="$HOME/Library/Application Support/runtimes/manga-translator"
+RT="$HOME/Library/Application Support/MiaoDock/manga/runtimes/manga-translator"
 "$RT/venv/bin/pip" install -r "$RT/src/requirements.txt"
 ```
 
@@ -314,7 +314,7 @@ GET http://127.0.0.1:8000/api/v1/engine/runtime
 ### 5.2 该走 MPS 却走了 CPU / 首图特别慢
 
 ```bash
-RT="$HOME/Library/Application Support/runtimes/manga-translator"
+RT="$HOME/Library/Application Support/MiaoDock/manga/runtimes/manga-translator"
 "$RT/venv/bin/python" -c "import torch; print(torch.__version__, torch.backends.mps.is_available(), torch.backends.mps.is_built())"
 ```
 
@@ -344,7 +344,7 @@ export NO_PROXY="127.0.0.1,localhost,::1"
 从"下载"来的文件带隔离属性，去掉它：
 
 ```bash
-xattr -dr com.apple.quarantine "$HOME/Library/Application Support/runtimes/manga-translator"
+xattr -dr com.apple.quarantine "$HOME/Library/Application Support/MiaoDock/manga/runtimes/manga-translator"
 ```
 
 > 正式分发走签名 + 公证（E1）；自建自用走上面这一条。
@@ -370,7 +370,7 @@ xattr -dr com.apple.quarantine "$HOME/Library/Application Support/runtimes/manga
 - **迁移到新机器**：`runtimes` 整目录拷过去**不能用**（venv 与 python 运行时里有绝对路径），
   正确做法是在新机器上重跑 §3。模型那份 6.3 GiB 可以从旧机器**拷 `models-store/`** 到
   同一相对位置，省一次下载 —— 拷完跑 `fetch:models --check` 验校验和。
-- **卸载喵坞**：`~/Library/Application Support/runtimes/` 里这 13 GB **不会**被自动删除
+- **卸载喵坞**：`~/Library/Application Support/MiaoDock/manga/runtimes/` 里这 13 GB **不会**被自动删除
   （卸载程序只提示位置与体积）。自己确认不再需要时手动删整个 `runtimes` 目录即可。
 
 ---

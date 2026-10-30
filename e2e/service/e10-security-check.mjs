@@ -293,8 +293,8 @@ async function runAll(extraEnv = {}) {
     MIAO_ENGINE_TIMEOUT_MS: '8000',
     MIAO_PORT: String(svcPort),
     MIAO_TOKEN: TOKEN,
-    MIAO_STATE_DIR: path.join(TMP, 'state'),
-    MIAO_ROOT: path.join(TMP, 'root'),
+    MIAO_MANGA_STATE_DIR: path.join(TMP, 'state'),
+    MIAO_MANGA_ROOT_DIR: path.join(TMP, 'root'),
     // ③ 由 manga-service 持有；这里不让它真去拉 llama-server（E10 不考 ③）
     MIAO_NO_LLM_AUTOSTART: '1',
     // 🔴🔴 `MIAO_NO_LLM_AUTOSTART` **只挡预拉起**，挡不住"翻译那一刻"的**懒加载**

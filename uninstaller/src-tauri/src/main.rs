@@ -6,8 +6,8 @@
 //!
 //! 🔴 **本程序住在安装目录里**：`current_exe()` 的父目录就是安装目录 ——
 //!    不再需要「安装器写下装在哪」的外部记录文件（那条契约已随单文件安装退役）。
-//! 🔴 **目录口径与产品侧同源**：漫画 = `MIAO_ROOT` 或 `~/Pictures/Box 漫画`；
-//!    引擎 = `MIAO_RUNTIME_ROOT` 或 `<appData>/runtimes/manga-translator`；
+//! 🔴 **目录口径与产品侧同源**：漫画 = `MIAO_MANGA_ROOT_DIR` 或 `~/Pictures/MiaoDock Mangas`；
+//!    引擎 = `MIAO_MANGA_RUNTIME_ROOT` 或 `<appData>/MiaoDock/manga/runtimes/manga-translator`；
 //!    音乐缓存 = `%LOCALAPPDATA%\com.miaodock.desktop\cache\music-cache`。
 //! 🔴 **删除前必须过安全闸**：路径要在允许的根之下、至少三层、不是盘根 —— 这是删用户数据，
 //!    宁可拒绝也不猜。junction / 符号链接只摘链接本身，不进去删。
@@ -180,7 +180,8 @@ fn uninstall(targets: &[String], on_progress: &tauri::ipc::Channel<u32>) -> Resu
 /// （全机 + 仅为我），全杀掉是可接受的代价，而留着占用的 exe 会导致"卸载不干净"。
 fn terminate_running_app() -> usize {
     let mut killed = 0;
-    for image in ["miao-dock.exe", "mangasvc.exe"] {
+    // 三个镜像：桌面端 + 漫画服务 + 动漫服务（D-242；后者是独立 exe，占着文件就删不干净）
+    for image in ["miao-dock.exe", "mangasvc.exe", "animesvc.exe"] {
         let ok = Command::new("taskkill")
             .args(["/F", "/T", "/IM", image])
             .stdout(std::process::Stdio::null())
@@ -370,14 +371,16 @@ fn music_cache_dir() -> PathBuf {
         .join("music-cache")
 }
 
-/// 漫画作品目录：`MIAO_ROOT` 覆盖，默认 `~/Pictures/Box 漫画`
+/// 漫画作品目录：`MIAO_MANGA_ROOT_DIR` 覆盖，默认 `~/Pictures/MiaoDock Mangas`
 fn root_dir() -> PathBuf {
-    env_path("MIAO_ROOT").unwrap_or_else(|| user_profile().join("Pictures").join("Box 漫画"))
+    env_path("MIAO_MANGA_ROOT_DIR").unwrap_or_else(|| user_profile().join("Pictures").join("MiaoDock Mangas"))
 }
 
-/// 引擎运行时：`<runtimeRoot>/manga-translator`，runtimeRoot 可被 `MIAO_RUNTIME_ROOT` 覆盖
+/// 引擎运行时：`<runtimeRoot>/manga-translator`，runtimeRoot 默认 `<appData>/MiaoDock/manga/runtimes`，
+/// 可用 `MIAO_MANGA_RUNTIME_ROOT` 覆盖（与产品侧 `paths::manga_runtime_root()` 同一口径）
 fn engine_dir() -> PathBuf {
-    let root = env_path("MIAO_RUNTIME_ROOT").unwrap_or_else(|| local_app_data().join("runtimes"));
+    let root = env_path("MIAO_MANGA_RUNTIME_ROOT")
+        .unwrap_or_else(|| local_app_data().join("MiaoDock").join("manga").join("runtimes"));
     root.join("manga-translator")
 }
 
@@ -451,7 +454,7 @@ fn allowed_roots() -> Vec<PathBuf> {
             .unwrap_or_else(|| user_profile().join("AppData").join("Roaming")),
     ];
     // 环境变量覆盖出来的落点（测试 / 迁移场景）也放行其父目录
-    for name in ["MIAO_ROOT", "MIAO_RUNTIME_ROOT"] {
+    for name in ["MIAO_MANGA_ROOT_DIR", "MIAO_MANGA_RUNTIME_ROOT"] {
         if let Some(p) = env_path(name) {
             if let Some(parent) = p.parent() {
                 roots.push(parent.to_path_buf());

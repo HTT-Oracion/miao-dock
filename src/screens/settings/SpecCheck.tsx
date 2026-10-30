@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import type { RefObject } from 'react';
 import { runSpecCheck, type SpecResult } from '@/tools/spec-check';
+import { toastBus } from '@/stores/toastBus';
 import type { ThemeMode } from '@/themes/tokens';
 import { LIBRARY, QUEUE_TABLE } from '@/themes/tokens';
 import type { TaskRow } from '@/types';
 import { STATUS_DOT_VAR, STATUS_LABEL, SOURCE_LABEL } from '@/types';
-import { Btn, Dot, MagicCircle } from '@components/units';
+import { Btn, Dot, MagicCircle, Select, Switch } from '@components/units';
 import { QuitConfirm } from '@components/QuitConfirm';
 import { emphasis } from '@screens/settings/parts';
 
@@ -105,7 +106,11 @@ export function SpecFixture() {
     >
       <div className="queue">
         <div className="qt-head">
-          <div className="qt-name">任务 / 漫画名</div>
+          <div className="qt-no">#</div>
+          <div className="qt-name">
+            <span className="qt-cover qt-cover-ghost" aria-hidden="true" />
+            <div className="qt-name-col">任务 / 漫画名</div>
+          </div>
           <div className="qt-c-source" style={{ width: QUEUE_TABLE.colSource }}>
             来源
           </div>
@@ -120,15 +125,24 @@ export function SpecFixture() {
           </div>
         </div>
         <div className="qt-body">
-          {SAMPLE_ROWS.map((t) => (
+          {SAMPLE_ROWS.map((t, i) => (
             <div
               key={t.taskId}
               className={t.status === 'running' ? 'qt-row is-running' : 'qt-row'}
               style={{ height: QUEUE_TABLE.rowHeight }}
+              data-status={t.status}
             >
+              <div className="qt-no">
+                <span className="num">{i + 1}</span>
+              </div>
               <div className="qt-name">
-                <div className="qt-name-main">{t.comicName}</div>
-                <div className="qt-name-sub">{SOURCE_LABEL[t.source]}</div>
+                <span className="qt-cover" aria-hidden="true">
+                  {Array.from(t.comicName)[0] ?? '?'}
+                </span>
+                <div className="qt-name-col">
+                  <div className="qt-name-main">{t.comicName}</div>
+                  <div className="qt-name-sub">{SOURCE_LABEL[t.source]}</div>
+                </div>
               </div>
               <div className="qt-c-source" style={{ width: QUEUE_TABLE.colSource }}>
                 {SOURCE_LABEL[t.source]}
@@ -166,13 +180,34 @@ export function SpecFixture() {
           <div className="lib-left-list" />
         </aside>
         <section className="lib-right">
-          <div className="lib-grid">
-            <div
-              className="grid-card"
-              style={{ width: LIBRARY.card.w, height: LIBRARY.card.h, borderRadius: LIBRARY.card.radius }}
-            />
+          {/*
+            样张必须与**真实页卡**同构：页卡已按设计稿改成 `.page-card`（宽度交给网格、
+            缩略图按 3/4.16 自适应），样张若还留着 `.grid-card`，C5 就会一直量一个
+            真实界面里不存在的元素 —— 那是空断言，比没有更坏。
+          */}
+          <div className="page-grid">
+            <div className="page-card">
+              <span className="page-thumb" />
+              <span className="page-label">
+                <b>第 1 页</b>
+                <em>001.png</em>
+              </span>
+            </div>
           </div>
         </section>
+      </div>
+
+      {/*
+        设置页行控件样张（C12）。设计稿右列那一排控件**各有各的尺寸**，不是统一高度：
+        下拉 186×32、小按钮 28/r9/11.5、只读值 28/r8/10.5、开关轨道 38×22（圆点 16）。
+        样张挂在 `.set-row-ctl` 里，与真行的上下文完全一致 —— 那条 186 的宽度就是
+        靠这个作用域生效的，样张换了容器等于没测到真东西。
+      */}
+      <div className="set-row-ctl" data-spec="ctl">
+        <span className="set-ro">127.0.0.1:5180</span>
+        <Btn size="sm">重新下载</Btn>
+        <Switch on label="样张开关" onToggle={noop} />
+        <Select label="样张下拉" value="a" options={[{ value: 'a', label: '高清臻音' }]} onChange={noop} />
       </div>
 
       {/*
@@ -183,7 +218,7 @@ export function SpecFixture() {
         顺序一变它就会误取到这里的「退出喵坞」。
       */}
       <div style={{ transform: 'translateZ(0)' }}>
-        <QuitConfirm onStay={noop} onQuit={noop} />
+        <QuitConfirm onStay={noop} onQuit={noop} onDismiss={noop} />
       </div>
     </div>
   );
@@ -225,7 +260,14 @@ export function useSpecCheck(fixtureRef: RefObject<HTMLDivElement>, mode: ThemeM
         fired = true;
         if (!fixtureRef.current) return;
         setRevealed(true);
-        setResults(runSpecCheck(fixtureRef.current, mode));
+        const next = runSpecCheck(fixtureRef.current, mode);
+        setResults(next);
+        // 设计稿这一动作有一条成功吐司（`规格自检通过 / 5 / 5 项全部通过`）；
+        // 条数取本次实测结果，不写死。失败时不出吐司 —— 行内清单会逐条点名，
+        // 那时需要的是一次次修到绿，而不是一句"失败了"
+        if (next.every((r) => r.ok)) {
+          toastBus.push('规格自检通过', 'good', `${next.length} / ${next.length} 项全部通过`);
+        }
       };
       requestAnimationFrame(fire);
       setTimeout(fire, 120);
@@ -272,7 +314,10 @@ export function SpecCheckBlock({
               </>
             ) : null}
           </span>
-        ) : null}
+        ) : (
+          /* 未跑过 = 「尚未运行」（设计稿 `.inline-result` 的空态文案），不是"通过 0 / 0" */
+          <span className="muted set-spec-count">尚未运行</span>
+        )}
         {revealed ? null : <span className="muted set-spec-hint">（首次运行会先让样张完成布局）</span>}
       </div>
 

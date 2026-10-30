@@ -1,4 +1,787 @@
 {
+  "atomic": {
+    "noTmpResidue": true,
+    "targetIntactAfterAbort": true
+  },
+  "fixtures": {
+    "batchesTask": {
+      "batches": [
+        {
+          "batchIndex": 1,
+          "count": 1,
+          "idempotencyKey": null,
+          "items": [
+            {
+              "byteSize": 1,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": null,
+              "outputFile": null,
+              "overwrite": false,
+              "reason": "canceled",
+              "retryCount": 0,
+              "saved": false,
+              "seq": 1,
+              "sha256": null,
+              "status": "skipped"
+            }
+          ],
+          "seqFrom": 1,
+          "seqTo": 1,
+          "status": "queued"
+        },
+        {
+          "batchIndex": 2,
+          "count": 2,
+          "idempotencyKey": null,
+          "items": [
+            {
+              "byteSize": 1,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": null,
+              "outputFile": null,
+              "overwrite": false,
+              "reason": null,
+              "retryCount": 0,
+              "saved": false,
+              "seq": 2,
+              "sha256": null,
+              "status": "pending"
+            },
+            {
+              "byteSize": 1,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": null,
+              "outputFile": null,
+              "overwrite": false,
+              "reason": null,
+              "retryCount": 0,
+              "saved": false,
+              "seq": 3,
+              "sha256": null,
+              "status": "pending"
+            }
+          ],
+          "seqFrom": 2,
+          "seqTo": 3,
+          "status": "queued"
+        },
+        {
+          "batchIndex": 3,
+          "count": 2,
+          "idempotencyKey": null,
+          "items": [
+            {
+              "byteSize": 1,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": null,
+              "outputFile": null,
+              "overwrite": false,
+              "reason": null,
+              "retryCount": 0,
+              "saved": true,
+              "seq": 4,
+              "sha256": null,
+              "status": "success"
+            },
+            {
+              "byteSize": 1,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": null,
+              "outputFile": null,
+              "overwrite": false,
+              "reason": null,
+              "retryCount": 0,
+              "saved": false,
+              "seq": 5,
+              "sha256": null,
+              "status": "translating"
+            }
+          ],
+          "seqFrom": 4,
+          "seqTo": 5,
+          "status": "queued"
+        },
+        {
+          "batchIndex": 4,
+          "count": 2,
+          "idempotencyKey": null,
+          "items": [
+            {
+              "byteSize": 1,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": null,
+              "outputFile": null,
+              "overwrite": false,
+              "reason": null,
+              "retryCount": 0,
+              "saved": true,
+              "seq": 6,
+              "sha256": null,
+              "status": "success"
+            },
+            {
+              "byteSize": 1,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": null,
+              "outputFile": null,
+              "overwrite": false,
+              "reason": null,
+              "retryCount": 0,
+              "saved": false,
+              "seq": 7,
+              "sha256": null,
+              "status": "failed"
+            }
+          ],
+          "seqFrom": 6,
+          "seqTo": 7,
+          "status": "queued"
+        },
+        {
+          "batchIndex": 5,
+          "count": 2,
+          "idempotencyKey": null,
+          "items": [
+            {
+              "byteSize": 1,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": null,
+              "outputFile": null,
+              "overwrite": false,
+              "reason": null,
+              "retryCount": 0,
+              "saved": false,
+              "seq": 8,
+              "sha256": null,
+              "status": "failed"
+            },
+            {
+              "byteSize": 1,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": null,
+              "outputFile": null,
+              "overwrite": false,
+              "reason": null,
+              "retryCount": 0,
+              "saved": false,
+              "seq": 9,
+              "sha256": null,
+              "status": "failed"
+            }
+          ],
+          "seqFrom": 8,
+          "seqTo": 9,
+          "status": "queued"
+        },
+        {
+          "batchIndex": 6,
+          "count": 2,
+          "idempotencyKey": null,
+          "items": [
+            {
+              "byteSize": 1,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": null,
+              "outputFile": null,
+              "overwrite": false,
+              "reason": null,
+              "retryCount": 0,
+              "saved": true,
+              "seq": 10,
+              "sha256": null,
+              "status": "success"
+            },
+            {
+              "byteSize": 1,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": null,
+              "outputFile": null,
+              "overwrite": false,
+              "reason": "already_exists",
+              "retryCount": 0,
+              "saved": true,
+              "seq": 11,
+              "sha256": null,
+              "status": "skipped"
+            }
+          ],
+          "seqFrom": 10,
+          "seqTo": 11,
+          "status": "queued"
+        }
+      ],
+      "cancelRequested": false,
+      "clientTaskRef": null,
+      "clients": [],
+      "comicName": "批次覆盖",
+      "createdAt": "2026-10-13T04:35:29.000Z",
+      "dirName": "批次覆盖",
+      "events": [],
+      "finishedAt": null,
+      "idempotencyKey": null,
+      "lang": {
+        "from": "ja",
+        "to": "zh"
+      },
+      "normalizedComicName": "批次覆盖",
+      "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\批次覆盖",
+      "queuePosition": 0,
+      "source": "unknown",
+      "status": "canceled",
+      "taskId": "tsk_0123456789ABCDEFGHJKMNPQRT",
+      "translator": "sakura"
+    },
+    "currentTaskId": "tsk_00000000000000000000000001",
+    "hiddenSeeds": ["B Comic", "A Comic", "A Comic"],
+    "planComicDir": "测试漫画",
+    "queueIds": ["tsk_00000000000000000000000002"],
+    "task": {
+      "batches": [
+        {
+          "batchIndex": 1,
+          "count": 3,
+          "idempotencyKey": null,
+          "items": [
+            {
+              "byteSize": 123,
+              "durationMs": 1000,
+              "errorMessage": null,
+              "ext": "png",
+              "fromDisk": false,
+              "mime": "image/png",
+              "originalFile": "001.png",
+              "outputFile": "001_translated.png",
+              "overwrite": false,
+              "reason": null,
+              "retryCount": 0,
+              "saved": true,
+              "seq": 1,
+              "sha256": "aa",
+              "status": "success"
+            },
+            {
+              "byteSize": 456,
+              "durationMs": 2000,
+              "errorMessage": null,
+              "ext": "jpg",
+              "fromDisk": false,
+              "mime": "image/jpeg",
+              "originalFile": "002.jpg",
+              "outputFile": null,
+              "overwrite": false,
+              "reason": "engine_error",
+              "retryCount": 1,
+              "saved": false,
+              "seq": 2,
+              "sha256": null,
+              "status": "failed"
+            },
+            {
+              "byteSize": 789,
+              "durationMs": null,
+              "errorMessage": null,
+              "ext": "webp",
+              "fromDisk": false,
+              "mime": "image/webp",
+              "originalFile": "003.webp",
+              "outputFile": "003_translated.png",
+              "overwrite": false,
+              "reason": "already_exists",
+              "retryCount": 0,
+              "saved": true,
+              "seq": 3,
+              "sha256": null,
+              "status": "skipped"
+            }
+          ],
+          "seqFrom": 1,
+          "seqTo": 3,
+          "status": "partial_failed"
+        }
+      ],
+      "cancelRequested": false,
+      "clientTaskRef": null,
+      "clients": [],
+      "comicName": "夏日重现",
+      "createdAt": "2026-10-13T04:35:29.000Z",
+      "dirName": "夏日重现",
+      "events": [],
+      "finishedAt": "2026-10-13T04:36:10.500Z",
+      "idempotencyKey": null,
+      "lang": {
+        "from": "ja",
+        "to": "zh"
+      },
+      "normalizedComicName": "夏日重现",
+      "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\夏日重现",
+      "queuePosition": 0,
+      "source": "unknown",
+      "status": "partial_failed",
+      "taskId": "tsk_0123456789ABCDEFGHJKMNPQRS",
+      "translator": "sakura"
+    },
+    "tasks": [
+      {
+        "batches": [
+          {
+            "batchIndex": 1,
+            "count": 2,
+            "idempotencyKey": null,
+            "items": [
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": true,
+                "seq": 1,
+                "sha256": null,
+                "status": "success"
+              },
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": false,
+                "seq": 2,
+                "sha256": null,
+                "status": "pending"
+              }
+            ],
+            "seqFrom": 1,
+            "seqTo": 2,
+            "status": "queued"
+          }
+        ],
+        "cancelRequested": false,
+        "clientTaskRef": null,
+        "clients": [],
+        "comicName": "运行中",
+        "createdAt": "2026-10-13T04:35:29.000Z",
+        "dirName": "运行中",
+        "events": [],
+        "finishedAt": null,
+        "idempotencyKey": null,
+        "lang": {
+          "from": "ja",
+          "to": "zh"
+        },
+        "normalizedComicName": "运行中",
+        "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\运行中",
+        "queuePosition": 0,
+        "source": "unknown",
+        "status": "running",
+        "taskId": "tsk_00000000000000000000000001",
+        "translator": "sakura"
+      },
+      {
+        "batches": [
+          {
+            "batchIndex": 1,
+            "count": 2,
+            "idempotencyKey": null,
+            "items": [
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": false,
+                "seq": 1,
+                "sha256": null,
+                "status": "pending"
+              },
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": false,
+                "seq": 2,
+                "sha256": null,
+                "status": "pending"
+              }
+            ],
+            "seqFrom": 1,
+            "seqTo": 2,
+            "status": "queued"
+          }
+        ],
+        "cancelRequested": false,
+        "clientTaskRef": null,
+        "clients": [],
+        "comicName": "排队甲",
+        "createdAt": "2026-10-13T04:36:00.000Z",
+        "dirName": "排队甲",
+        "events": [],
+        "finishedAt": null,
+        "idempotencyKey": null,
+        "lang": {
+          "from": "ja",
+          "to": "zh"
+        },
+        "normalizedComicName": "排队甲",
+        "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\排队甲",
+        "queuePosition": 0,
+        "source": "unknown",
+        "status": "queued",
+        "taskId": "tsk_00000000000000000000000002",
+        "translator": "sakura"
+      },
+      {
+        "batches": [
+          {
+            "batchIndex": 1,
+            "count": 2,
+            "idempotencyKey": null,
+            "items": [
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": false,
+                "seq": 1,
+                "sha256": null,
+                "status": "pending"
+              },
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": false,
+                "seq": 2,
+                "sha256": null,
+                "status": "pending"
+              }
+            ],
+            "seqFrom": 1,
+            "seqTo": 2,
+            "status": "queued"
+          }
+        ],
+        "cancelRequested": false,
+        "clientTaskRef": null,
+        "clients": [],
+        "comicName": "排队乙",
+        "createdAt": "2026-10-13T04:37:00.000Z",
+        "dirName": "排队乙",
+        "events": [],
+        "finishedAt": null,
+        "idempotencyKey": null,
+        "lang": {
+          "from": "ja",
+          "to": "zh"
+        },
+        "normalizedComicName": "排队乙",
+        "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\排队乙",
+        "queuePosition": 0,
+        "source": "unknown",
+        "status": "queued",
+        "taskId": "tsk_00000000000000000000000003",
+        "translator": "sakura"
+      },
+      {
+        "batches": [
+          {
+            "batchIndex": 1,
+            "count": 2,
+            "idempotencyKey": null,
+            "items": [
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": true,
+                "seq": 1,
+                "sha256": null,
+                "status": "success"
+              },
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": true,
+                "seq": 2,
+                "sha256": null,
+                "status": "success"
+              }
+            ],
+            "seqFrom": 1,
+            "seqTo": 2,
+            "status": "queued"
+          }
+        ],
+        "cancelRequested": false,
+        "clientTaskRef": null,
+        "clients": [],
+        "comicName": "完成",
+        "createdAt": "2026-10-13T04:38:00.000Z",
+        "dirName": "完成",
+        "events": [],
+        "finishedAt": "2026-10-13T04:40:00.000Z",
+        "idempotencyKey": null,
+        "lang": {
+          "from": "ja",
+          "to": "zh"
+        },
+        "normalizedComicName": "完成",
+        "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\完成",
+        "queuePosition": 0,
+        "source": "unknown",
+        "status": "done",
+        "taskId": "tsk_00000000000000000000000004",
+        "translator": "sakura"
+      },
+      {
+        "batches": [
+          {
+            "batchIndex": 1,
+            "count": 2,
+            "idempotencyKey": null,
+            "items": [
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": true,
+                "seq": 1,
+                "sha256": null,
+                "status": "success"
+              },
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": false,
+                "seq": 2,
+                "sha256": null,
+                "status": "pending"
+              }
+            ],
+            "seqFrom": 1,
+            "seqTo": 2,
+            "status": "queued"
+          }
+        ],
+        "cancelRequested": false,
+        "clientTaskRef": null,
+        "clients": [],
+        "comicName": "失败",
+        "createdAt": "2026-10-13T04:39:00.000Z",
+        "dirName": "失败",
+        "events": [],
+        "finishedAt": "2026-10-13T04:50:00.000Z",
+        "idempotencyKey": null,
+        "lang": {
+          "from": "ja",
+          "to": "zh"
+        },
+        "normalizedComicName": "失败",
+        "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\失败",
+        "queuePosition": 0,
+        "source": "unknown",
+        "status": "failed",
+        "taskId": "tsk_00000000000000000000000005",
+        "translator": "sakura"
+      },
+      {
+        "batches": [
+          {
+            "batchIndex": 1,
+            "count": 2,
+            "idempotencyKey": null,
+            "items": [
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": true,
+                "seq": 1,
+                "sha256": null,
+                "status": "success"
+              },
+              {
+                "byteSize": 1,
+                "durationMs": null,
+                "errorMessage": null,
+                "ext": "png",
+                "fromDisk": false,
+                "mime": "image/png",
+                "originalFile": null,
+                "outputFile": null,
+                "overwrite": false,
+                "reason": null,
+                "retryCount": 0,
+                "saved": true,
+                "seq": 2,
+                "sha256": null,
+                "status": "success"
+              }
+            ],
+            "seqFrom": 1,
+            "seqTo": 2,
+            "status": "queued"
+          }
+        ],
+        "cancelRequested": false,
+        "clientTaskRef": null,
+        "clients": [],
+        "comicName": "缺完成时间",
+        "createdAt": "2026-10-13T04:45:00.000Z",
+        "dirName": "缺完成时间",
+        "events": [],
+        "finishedAt": null,
+        "idempotencyKey": null,
+        "lang": {
+          "from": "ja",
+          "to": "zh"
+        },
+        "normalizedComicName": "缺完成时间",
+        "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\缺完成时间",
+        "queuePosition": 0,
+        "source": "unknown",
+        "status": "done",
+        "taskId": "tsk_00000000000000000000000006",
+        "translator": "sakura"
+      }
+    ]
+  },
+  "hidden": ["A Comic", "B Comic"],
+  "persistedBytes": "{\n  \"taskId\": \"tsk_0123456789ABCDEFGHJKMNPQRS\",\n  \"comicName\": \"夏日重现\",\n  \"normalizedComicName\": \"夏日重现\",\n  \"dirName\": \"夏日重现\",\n  \"outputDir\": \"<HOME>\\\\Pictures\\\\MiaoDock Mangas\\\\夏日重现\",\n  \"status\": \"partial_failed\",\n  \"lang\": {\n    \"from\": \"ja\",\n    \"to\": \"zh\"\n  },\n  \"translator\": \"sakura\",\n  \"clientTaskRef\": null,\n  \"source\": \"unknown\",\n  \"idempotencyKey\": null,\n  \"createdAt\": \"2026-10-13T04:35:29.000Z\",\n  \"finishedAt\": \"2026-10-13T04:36:10.500Z\",\n  \"finalProgress\": {\n    \"total\": 3,\n    \"done\": 2,\n    \"failed\": 1,\n    \"current\": 0\n  },\n  \"batches\": [\n    {\n      \"batchIndex\": 1,\n      \"count\": 3,\n      \"seqFrom\": 1,\n      \"seqTo\": 3,\n      \"status\": \"partial_failed\",\n      \"idempotencyKey\": null,\n      \"items\": [\n        {\n          \"seq\": 1,\n          \"ext\": \"png\",\n          \"byteSize\": 123,\n          \"fromDisk\": false,\n          \"status\": \"success\",\n          \"saved\": true,\n          \"originalFile\": \"001.png\",\n          \"outputFile\": \"001_translated.png\",\n          \"sha256\": \"aa\",\n          \"durationMs\": 1000,\n          \"retryCount\": 0,\n          \"reason\": null\n        },\n        {\n          \"seq\": 2,\n          \"ext\": \"jpg\",\n          \"byteSize\": 456,\n          \"fromDisk\": false,\n          \"status\": \"failed\",\n          \"saved\": false,\n          \"originalFile\": \"002.jpg\",\n          \"outputFile\": null,\n          \"sha256\": null,\n          \"durationMs\": 2000,\n          \"retryCount\": 1,\n          \"reason\": \"engine_error\"\n        },\n        {\n          \"seq\": 3,\n          \"ext\": \"webp\",\n          \"byteSize\": 789,\n          \"fromDisk\": false,\n          \"status\": \"skipped\",\n          \"saved\": true,\n          \"originalFile\": \"003.webp\",\n          \"outputFile\": \"003_translated.png\",\n          \"sha256\": null,\n          \"durationMs\": null,\n          \"retryCount\": 0,\n          \"reason\": \"already_exists\"\n        }\n      ]\n    }\n  ]\n}\n",
+  "plans": {
+    "nextSeq": 1,
+    "resume": null,
+    "retranslate": null
+  },
   "pure": {
     "endStatusOf": {
       "allFail": "failed",
@@ -61,6 +844,109 @@
       "png": "png",
       "shortPng": null,
       "webp": "webp"
+    }
+  },
+  "pureInputs": {
+    "endStatusOf": {
+      "allFail": {
+        "statuses": ["failed"]
+      },
+      "allOk": {
+        "statuses": ["success", "skipped"]
+      },
+      "empty": {
+        "statuses": []
+      },
+      "someFail": {
+        "statuses": ["success", "failed"]
+      }
+    },
+    "fileScan": {
+      "names": ["001.png", "042.jpg", "003_translated.png", "cover.jpg", "1000.png", "001_translated.webp"]
+    },
+    "formatEtaText": {
+      "edge59": {
+        "max": 59,
+        "min": 1
+      },
+      "edge60": {
+        "max": 60,
+        "min": 60
+      },
+      "min": {
+        "max": 180,
+        "min": 60
+      },
+      "sec": {
+        "max": 30,
+        "min": 10
+      }
+    },
+    "isSafeDirName": {
+      "backslash": {
+        "name": "a\\b"
+      },
+      "cjk": {
+        "name": "夏日重现"
+      },
+      "dotInMiddle": {
+        "name": "a..b"
+      },
+      "dotdot": {
+        "name": ".."
+      },
+      "empty": {
+        "name": ""
+      },
+      "slash": {
+        "name": "a/b"
+      }
+    },
+    "orderImages": {
+      "byIndex": {
+        "files": ["a.png", "b.png", "c.png"],
+        "order": [2, 2]
+      },
+      "byName": {
+        "files": ["a.png", "b.png", "c.png"],
+        "order": ["c.png", "a.png"]
+      },
+      "empty": {
+        "files": ["a.png", "b.png", "c.png"],
+        "order": []
+      },
+      "exprIndex": {
+        "files": ["a.png", "b.png", "c.png"],
+        "order": ["2", "1"]
+      },
+      "trim": {
+        "files": ["a.png", "b.png", "c.png"],
+        "order": [" a.png "]
+      },
+      "unknownKey": {
+        "files": ["a.png", "b.png", "c.png"],
+        "order": ["zzz"]
+      }
+    },
+    "sniffImageType": {
+      "empty": {
+        "bytes": []
+      },
+      "gif": {
+        "bytes": [71, 73, 70, 56, 57, 97]
+      },
+      "jpg": {
+        "bytes": [255, 216, 255, 224]
+      },
+      "png": {
+        "bytes": [137, 80, 78, 71, 13, 10, 26, 10]
+      },
+      "shortPng": {
+        "bytes": [137, 80, 78]
+      },
+      "webp": {
+        "bytes": [82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80]
+      }
     }
   },
   "serializedTask": {
@@ -135,12 +1021,13 @@
       "to": "zh"
     },
     "normalizedComicName": "夏日重现",
-    "outputDir": "<HOME>\\Pictures\\Box 漫画\\夏日重现",
+    "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\夏日重现",
     "source": "unknown",
     "status": "partial_failed",
     "taskId": "tsk_0123456789ABCDEFGHJKMNPQRS",
     "translator": "sakura"
   },
+  "ulidOk": true,
   "views": {
     "batchStatuses": ["canceled", "queued", "running", "partial_failed", "failed", "done"],
     "create": {
@@ -161,7 +1048,7 @@
         "text": "预计 1–3 分钟"
       },
       "normalizedComicName": "夏日重现",
-      "outputDir": "<HOME>\\Pictures\\Box 漫画\\夏日重现",
+      "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\夏日重现",
       "queuePosition": 0,
       "status": "partial_failed",
       "taskId": "tsk_0123456789ABCDEFGHJKMNPQRS"
@@ -217,7 +1104,7 @@
         }
       ],
       "normalizedComicName": "夏日重现",
-      "outputDir": "<HOME>\\Pictures\\Box 漫画\\夏日重现",
+      "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\夏日重现",
       "progress": {
         "current": 0,
         "done": 2,
@@ -269,7 +1156,7 @@
         }
       ],
       "normalizedComicName": "夏日重现",
-      "outputDir": "<HOME>\\Pictures\\Box 漫画\\夏日重现",
+      "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\夏日重现",
       "progress": {
         "current": 0,
         "done": 2,
@@ -285,7 +1172,7 @@
       "createdAt": "2026-10-13T04:35:29.000Z",
       "finishedAt": "2026-10-13T04:36:10.500Z",
       "normalizedComicName": "夏日重现",
-      "outputDir": "<HOME>\\Pictures\\Box 漫画\\夏日重现",
+      "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\夏日重现",
       "progress": {
         "current": 0,
         "done": 2,
@@ -336,7 +1223,7 @@
           "createdAt": "2026-10-13T04:35:29.000Z",
           "finishedAt": null,
           "normalizedComicName": "运行中",
-          "outputDir": "<HOME>\\Pictures\\Box 漫画\\运行中",
+          "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\运行中",
           "progress": {
             "current": 0,
             "done": 1,
@@ -353,7 +1240,7 @@
           "createdAt": "2026-10-13T04:36:00.000Z",
           "finishedAt": null,
           "normalizedComicName": "排队甲",
-          "outputDir": "<HOME>\\Pictures\\Box 漫画\\排队甲",
+          "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\排队甲",
           "progress": {
             "current": 0,
             "done": 0,
@@ -370,7 +1257,7 @@
           "createdAt": "2026-10-13T04:37:00.000Z",
           "finishedAt": null,
           "normalizedComicName": "排队乙",
-          "outputDir": "<HOME>\\Pictures\\Box 漫画\\排队乙",
+          "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\排队乙",
           "progress": {
             "current": 0,
             "done": 0,
@@ -387,7 +1274,7 @@
           "createdAt": "2026-10-13T04:39:00.000Z",
           "finishedAt": "2026-10-13T04:50:00.000Z",
           "normalizedComicName": "失败",
-          "outputDir": "<HOME>\\Pictures\\Box 漫画\\失败",
+          "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\失败",
           "progress": {
             "current": 0,
             "done": 1,
@@ -404,7 +1291,7 @@
           "createdAt": "2026-10-13T04:45:00.000Z",
           "finishedAt": null,
           "normalizedComicName": "缺完成时间",
-          "outputDir": "<HOME>\\Pictures\\Box 漫画\\缺完成时间",
+          "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\缺完成时间",
           "progress": {
             "current": 0,
             "done": 2,
@@ -421,7 +1308,7 @@
           "createdAt": "2026-10-13T04:38:00.000Z",
           "finishedAt": "2026-10-13T04:40:00.000Z",
           "normalizedComicName": "完成",
-          "outputDir": "<HOME>\\Pictures\\Box 漫画\\完成",
+          "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\完成",
           "progress": {
             "current": 0,
             "done": 2,
@@ -446,7 +1333,7 @@
           "createdAt": "2026-10-13T04:39:00.000Z",
           "finishedAt": "2026-10-13T04:50:00.000Z",
           "normalizedComicName": "失败",
-          "outputDir": "<HOME>\\Pictures\\Box 漫画\\失败",
+          "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\失败",
           "progress": {
             "current": 0,
             "done": 1,
@@ -463,7 +1350,7 @@
           "createdAt": "2026-10-13T04:45:00.000Z",
           "finishedAt": null,
           "normalizedComicName": "缺完成时间",
-          "outputDir": "<HOME>\\Pictures\\Box 漫画\\缺完成时间",
+          "outputDir": "<HOME>\\Pictures\\MiaoDock Mangas\\缺完成时间",
           "progress": {
             "current": 0,
             "done": 2,
@@ -478,17 +1365,5 @@
       ],
       "total": 3
     }
-  },
-  "plans": {
-    "nextSeq": 1,
-    "resume": null,
-    "retranslate": null
-  },
-  "hidden": ["A Comic", "B Comic"],
-  "persistedBytes": "{\n  \"taskId\": \"tsk_0123456789ABCDEFGHJKMNPQRS\",\n  \"comicName\": \"夏日重现\",\n  \"normalizedComicName\": \"夏日重现\",\n  \"dirName\": \"夏日重现\",\n  \"outputDir\": \"<HOME>\\\\Pictures\\\\Box 漫画\\\\夏日重现\",\n  \"status\": \"partial_failed\",\n  \"lang\": {\n    \"from\": \"ja\",\n    \"to\": \"zh\"\n  },\n  \"translator\": \"sakura\",\n  \"clientTaskRef\": null,\n  \"source\": \"unknown\",\n  \"idempotencyKey\": null,\n  \"createdAt\": \"2026-10-13T04:35:29.000Z\",\n  \"finishedAt\": \"2026-10-13T04:36:10.500Z\",\n  \"finalProgress\": {\n    \"total\": 3,\n    \"done\": 2,\n    \"failed\": 1,\n    \"current\": 0\n  },\n  \"batches\": [\n    {\n      \"batchIndex\": 1,\n      \"count\": 3,\n      \"seqFrom\": 1,\n      \"seqTo\": 3,\n      \"status\": \"partial_failed\",\n      \"idempotencyKey\": null,\n      \"items\": [\n        {\n          \"seq\": 1,\n          \"ext\": \"png\",\n          \"byteSize\": 123,\n          \"fromDisk\": false,\n          \"status\": \"success\",\n          \"saved\": true,\n          \"originalFile\": \"001.png\",\n          \"outputFile\": \"001_translated.png\",\n          \"sha256\": \"aa\",\n          \"durationMs\": 1000,\n          \"retryCount\": 0,\n          \"reason\": null\n        },\n        {\n          \"seq\": 2,\n          \"ext\": \"jpg\",\n          \"byteSize\": 456,\n          \"fromDisk\": false,\n          \"status\": \"failed\",\n          \"saved\": false,\n          \"originalFile\": \"002.jpg\",\n          \"outputFile\": null,\n          \"sha256\": null,\n          \"durationMs\": 2000,\n          \"retryCount\": 1,\n          \"reason\": \"engine_error\"\n        },\n        {\n          \"seq\": 3,\n          \"ext\": \"webp\",\n          \"byteSize\": 789,\n          \"fromDisk\": false,\n          \"status\": \"skipped\",\n          \"saved\": true,\n          \"originalFile\": \"003.webp\",\n          \"outputFile\": \"003_translated.png\",\n          \"sha256\": null,\n          \"durationMs\": null,\n          \"retryCount\": 0,\n          \"reason\": \"already_exists\"\n        }\n      ]\n    }\n  ]\n}\n",
-  "atomic": {
-    "noTmpResidue": true,
-    "targetIntactAfterAbort": true
-  },
-  "ulidOk": true
+  }
 }

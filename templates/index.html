@@ -4,31 +4,120 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>喵坞 · MiaoDock</title>
-    <!--
-      随仓字体：三份清单 + 字体文件都在 `public/assets/fonts/<dir>/`。
-
-      为什么是 <link> 而不是 main.tsx 的 import：这些是**不经过构建**的公共资源，
-      Vite 原样复制到 `dist/assets/fonts/`；走构建只会多拿一份带指纹的副本，而加载它们
-      本来就不需要任何编译期处理。入口只此一处，读代码的人一眼能看到"这个窗口装了哪些字体"。
-      ⚠️ 复制过去的 `dist/assets/fonts/**` 与构建产出的 `dist/assets/main-*.js` 等**同目录** ——
-      不冲突（原样复制的文件按源名，构建产物带内容指纹），这不是配置疏漏。
-
-      🔴 两条不能碰的红线（都由 `check:settings` 的 FONT 组钉着）：
-        ① **不许**写进 `styles/index.scss` 的 `@use` —— Sass 对带 `.css` 后缀的 `@use`
-           是**静默丢弃**的：不报错、不产出、也不改 `url()`，于是字体全部不进构建，
-           而 `npm run build` 照样成功、页面照样渲染（只是回落）。
-        ② 清单里的 `url()` 必须是**同目录相对路径**（或 `/assets/fonts/` 前缀）——
-           public 下的 css 不被构建改写，路径写错就是 404，同样不报错。
-
-      ⚠️ `templates/lyrics.html`（桌面歌词窗）**刻意不引**：它是深色玻璃浮条，
-      本来就不吃主窗这套字体栈（该窗口自有内联样式），加 link 属于行为变更，另议。
-    -->
-    <link rel="stylesheet" href="/assets/fonts/swei-gothic/font.css" />
+    <!-- 字体 -->
     <link rel="stylesheet" href="/assets/fonts/yozai-font/font.css" />
-    <link rel="stylesheet" href="/assets/fonts/lxgw-wenkai-gb/font.css" />
+    <link rel="stylesheet" href="/assets/fonts/swei-gothic/font.css" media="print" onload="this.media = 'all'" />
+    <link rel="stylesheet" href="/assets/fonts/lxgw-wenkai-gb/font.css" media="print" onload="this.media = 'all'" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- splash 脚本 -->
+      <script>
+        (function () {
+          var m = null;
+          try {
+            m = localStorage.getItem('miao.theme');
+          } catch (e) {
+            /* 读不到就用系统偏好 */
+          }
+          if (m !== 'light' && m !== 'dark') {
+            try {
+              m = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            } catch (e) {
+              m = 'light';
+            }
+          }
+          document.documentElement.dataset.boot = m;
+        })();
+      </script>
+      <style>
+        html,
+        body {
+          background: #f6f8f9;
+        }
+        html[data-boot='dark'],
+        html[data-boot='dark'] body {
+          background: #111820;
+        }
+        #boot-splash {
+          position: fixed;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 30px;
+          background: inherit;
+          font:
+            400 12px/1.6 'Segoe UI',
+            'PingFang SC',
+            'Microsoft YaHei',
+            system-ui,
+            sans-serif;
+          color: #2d3b46;
+          -webkit-font-smoothing: antialiased;
+        }
+        html[data-boot='dark'] #boot-splash {
+          color: #edf3f7;
+        }
+        #boot-splash .m {
+          position: relative;
+          width: 64px;
+          height: 64px;
+        }
+        #boot-splash .m i {
+          position: absolute;
+          inset: 0;
+          border: 2px solid transparent;
+          border-top-color: #6e97b9;
+          border-radius: 50%;
+          animation: boot 1.6s linear infinite;
+        }
+        #boot-splash .m i:nth-child(2) {
+          inset: 9px;
+          border-top-color: #dfa47d;
+          animation: 2.1s linear infinite boot reverse;
+        }
+        #boot-splash .m i:nth-child(3) {
+          inset: 18px;
+          border-top-color: #8ca88c;
+          animation-duration: 2.7s;
+        }
+        @keyframes boot {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        #boot-splash p {
+          margin: 0;
+          text-align: center;
+        }
+        #boot-splash b {
+          display: block;
+          font-size: 15px;
+          font-weight: 600;
+          letter-spacing: 0.16em;
+          text-indent: 0.16em;
+          text-transform: uppercase;
+        }
+        #boot-splash span {
+          color: #7e8d98;
+        }
+        html[data-boot='dark'] #boot-splash span {
+          color: #8798a5;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          #boot-splash .m i {
+            animation: none;
+          }
+        }
+      </style>
+      <!-- splah dom -->
+      <div id="boot-splash" role="status" aria-live="polite">
+        <div class="m" aria-hidden="true"><i></i><i></i><i></i></div>
+        <p><b>喵坞</b><span>正在启动…</span></p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,3 +1,4 @@
+import { Btn } from '@components/units/Btn';
 /**
  * 开关（通用单元）。
  *
@@ -9,7 +10,8 @@
  */
 export function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
   return (
-    <button
+    <Btn
+      kind="bare"
       type="button"
       className={on ? 'switch is-on' : 'switch'}
       onClick={onToggle}
@@ -19,6 +21,6 @@ export function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => v
       <span className="switch-track">
         <i />
       </span>
-    </button>
+    </Btn>
   );
 }

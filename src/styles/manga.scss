@@ -1,34 +1,456 @@
-/* ================================================================ X-C1 任务队列 */
+/* ================================================================ X-C1 任务队列
+ *
+ * ver3「空色日和」版：整块是一张卡片（汇总条 → 工具条 → 表 → 页脚），
+ * 行不再各自带边框，靠分隔线与左侧状态条区分。
+ * 列宽、行高仍来自 `QUEUE_TABLE` 令牌（C2a / C2b 量的是实测值，改这里必须同步改令牌）。
+ */
 
 .queue {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 4px 0 18px;
+}
+.queue-inner {
+  max-width: min(1320px, 100%);
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-/* 多选工具条：常态只放一句说明 + 「多选」；进入多选后换成「已选 N / 全选本页 / 删除 / 取消多选」 */
-.queue-bar {
+/* ── 汇总条：四个计数全部算自当前 rows，不是服务端另给的数 ───────────── */
+.queue-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 16px;
+  border: 1px solid var(--miao-line);
+  border-radius: 13px;
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+}
+/* 主数字（设计稿 `.qs-main`）：17px 等宽数字 + 11.5px「条任务」 */
+.qs-main {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
+  font-size: 12px;
+  color: var(--miao-text);
+}
+.qs-main strong {
+  font-family: var(--md-font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  font-variant-numeric: tabular-nums;
+}
+/* 三枚图例（设计稿 `.qs-legend`）：色点 + 文字，不用胶囊 —— 胶囊会把四个数读成四个按钮 */
+.qs-legend {
+  display: flex;
+  gap: 12px;
+  margin-left: 8px;
+}
+.qs-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+.qs-legend i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.qs-legend .is-running {
+  background: var(--miao-primary);
+}
+.qs-legend .is-queued {
+  background: var(--miao-muted);
+}
+.qs-legend .is-failed {
+  background: var(--miao-danger);
+}
+.qs-legend .is-done {
+  background: var(--miao-success);
+}
+.qs-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+/* ── 多选工具条：常态一句规则说明；进入多选后换成动作组 ─────────────── */
+.queue-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 4px;
+}
+/* 设计稿 `.qt-info`：条数 + 串行策略 + 不可删规则 */
+.qt-info {
+  font-size: 11px;
+  color: var(--miao-muted);
+}
+.qt-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* 排序口径：只说明"按什么排"，不做成可点的排序器（服务端就按创建时间给） */
+.qt-caption {
+  font-size: 10px;
+  color: var(--miao-faint);
 }
 .queue-sel {
-  font-size: 11.5px;
-  color: var(--md-ink);
+  font-family: var(--md-font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--miao-ink);
 }
 .queue-hint {
   font-size: 11px;
-  color: var(--md-muted);
+  color: var(--miao-muted);
 }
-/* 分页器：居中，按钮与页码同行 */
-.queue-pager {
+.queue-spacer {
+  flex: 1;
+}
+
+/* ── 表体：一张卡，行靠分隔线 ─────────────────────────────────────── */
+/*
+ * 队列表：六列宽度**只在这里定义一次**（表头与行共用 `--qt-cols`）。
+ * 名称列 `1fr` 吃剩余空间；来源 / 进度 / 状态 / 操作四列取 `QUEUE_TABLE` 的像素常量
+ * （那四个数被规格自检 C2a 逐列量取）。圆角按设计稿取 14。
+ */
+.queue-table {
+  --qt-cols: 26px minmax(180px, 1fr) 120px 160px 150px 128px;
+  border: 1px solid var(--miao-line);
+  border-radius: 14px;
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+  overflow: hidden;
+  /* 表头固定、表体滚动：整表 overflow:hidden 会把子元素的滚动一起裁掉 */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/*
+ * 表头与行共用同一套**六列网格**（设计稿 `.queue-row` 的 `grid-template-columns`）。
+ *
+ * 为什么从 flex 改成 grid：flex 下每列要各自写 `flex-basis`，而列宽只由那一个值决定；
+ * grid 把六列的宽度写在**一处**（`--qt-cols`），表头与行不可能对不齐。
+ * 名称列吃剩余空间（`1fr`），其余四列仍取 `QUEUE_TABLE` 的像素常量 ——
+ * 那四个数被规格自检 C2a 逐列量取，改成比例会让断言失去意义。
+ */
+.qt-head,
+.qt-row {
+  display: grid;
+  grid-template-columns: var(--qt-cols);
+  align-items: center;
+  gap: 12px;
+}
+.qt-head {
+  height: 42px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--miao-line);
+  background: var(--miao-surface-2);
+  font-family: var(--md-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--miao-faint);
+  text-transform: uppercase;
+}
+.qt-body {
+  display: flex;
+  flex-direction: column;
+  /* 表体独立滚动，表头与汇总条保持可见 */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.qt-row {
+  position: relative;
+  height: 58px;
+  padding: 0 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--miao-line) 72%, transparent);
+  border-top: 1px solid transparent;
+  transition:
+    background var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
+}
+.qt-row:last-child {
+  border-bottom: 0;
+}
+.qt-row:hover {
+  background: var(--miao-surface-2);
+}
+.qt-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+}
+.qt-row[data-status='queued']::before {
+  background: var(--miao-faint);
+}
+.qt-row[data-status='running']::before {
+  background: var(--miao-primary);
+}
+.qt-row[data-status='done']::before {
+  background: var(--miao-success);
+}
+.qt-row[data-status='partial_failed']::before {
+  background: var(--miao-warning);
+}
+.qt-row[data-status='failed']::before {
+  background: var(--miao-danger);
+}
+.qt-row[data-status='canceled']::before {
+  background: var(--miao-line-strong);
+}
+/*
+ * 当前运行行：surface 底 + line 描边（《02》§5.2）。
+ * 表格整体浮在 board 上，只有运行行被「抬」到 surface —— 这是该规格唯一自洽的读法，
+ * 否则表面底与描边都无法与普通行区隔。已记入 docs/internal/spec-notes.md G-06。
+ */
+.qt-row.is-running {
+  background: var(--md-surface);
+  border-color: var(--md-line);
+}
+
+/* 行序号列：多选时同一格里换成复选框，列宽不变，免得挤动后面的固定列 */
+.qt-no {
   display: flex;
   align-items: center;
   justify-content: center;
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+  color: var(--miao-faint);
+  font-variant-numeric: tabular-nums;
+}
+.qt-no .num {
+  font-size: 10px;
+}
+
+/* 任务名列：多选时左边多一个复选框，故整格是「行」；文字仍竖排两行由 .qt-name-col 承担。 */
+.qt-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.qt-name-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+}
+.qt-name-main {
+  font-family: var(--md-font-display);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qt-name-sub {
+  font-size: 11px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 设计稿 .queue-source：10px / muted —— 来源是次要信息，不该与任务名同权重 */
+.qt-c-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/*
+ * 进度格（设计稿 `.queue-progress` / `theme.css:374-375`）：**两行** ——
+ * 上排「N / M 页」与「失败数 / 百分比」分列两端，下排一条通栏 rail。
+ *
+ * 🔴 2026-10-26 修：此前是 `grid-template-columns: 1fr auto` 的**两列**网格，
+ *    而 ProgressCell 有 5 个文本节点 + 1 条 rail ⇒ 每个节点各占一格，
+ *    实际渲染成 **4 行 / 67px**（行高只有 58，直接溢出）：
+ *    第一行「0」被拉成 151px、第二行「1」、第三行「1 页失败」、第四行才是 rail。
+ *    真机读起来是竖着堆的四个片段，不是一句「0 / 1 页」。
+ *    改成 **5 列单行**（auto×4 + 1fr），rail 用 `grid-column: 1/-1` 落到第二行。
+ *
+ * ⚠️ 不能给这些节点加外层 wrapper 去凑布局：规格自检 C7c 量的是
+ *    `.num` 是否为 `.qt-c-progress` 的**直接子元素**（拆两个文本节点是为了
+ *    数字走 Inter、其余走正文体）。所以只能靠网格**定位**，不能靠**嵌套**。
+ */
+.qt-row .qt-c-progress {
+  display: grid;
+  grid-template-columns: auto auto auto auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 0;
+  row-gap: 3px;
+  /* 设计稿 `styles.css:1018`：整行 9.5px / muted；右侧注记（`b`）用 text 色 */
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* rail 独占第二行通栏（实际类名是 `.bar`，见 QueueScreen 的 barClass） */
+.qt-row .qt-c-progress > .bar {
+  grid-column: 1 / -1;
+  width: 100%;
+  /* 设计稿 `theme.css:375` 的 `.queue-row .rail { height: 6px }` */
+  height: 6px;
+  margin-top: 0;
+}
+/* 页数单位：设计稿「12 / 19 页」整句同色，不单独提亮或压暗 */
+.qt-unit {
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.qt-pct {
+  /* 设计稿 `.queue-progress-top` 是 `justify-content: space-between` ⇒ 右端贴边 */
+  justify-self: end;
+  color: var(--miao-text);
+}
+.qt-pct.is-warn {
+  color: var(--miao-warning);
+  font-weight: 600;
+}
+.qt-c-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* 状态文字一律 ink，色相由状态点承载（《02》§5.2） */
+  color: var(--md-ink);
+  font-size: 12px;
+}
+/*
+ * 队列状态徽标的尺寸（设计稿 `theme-music.css:250/383` 的生效值 ——
+ * 它在 `theme.css` 之后加载，覆盖了 `.queue-status .chip { height: 23px }`）：
+ * 24px 高 / 左右 9 / **最小宽 84 且居中**。
+ * 最小宽是为了让「进行中」「全部失败」「部分失败 · 3 页」这些长短不一的词
+ * 在列里**左缘对齐**，否则每行徽标宽度随文案跳动，扫视时找不到列。
+ */
+.qt-row .qt-c-status .st-badge {
+  height: 24px;
+  padding: 0 9px;
+  min-width: 84px;
+  justify-content: center;
+}
+/*
+ * 操作列：主动作 + [更多]，右对齐。
+ * ⚠️ 宽度以 `flex-basis`（128px）为准 —— 它压过行内 width，故改宽必须**同步改**
+ * `QUEUE_TABLE.colAction` 与这里两处，否则 C2a（实测宽 == 令牌）会红。
+ */
+.qt-c-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+/* 进度条：服务端给的 done/total，前端不自行估算 */
+.bar {
+  flex: 1 1 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--miao-surface-3);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--miao-primary);
+  transition: width var(--miao-dur-slow) var(--miao-ease-out);
+}
+.bar.is-done > i {
+  background: var(--miao-success);
+}
+.bar.is-bad > i {
+  background: var(--miao-warning);
+}
+
+/* ── 页脚：一句规则 + 翻页器（恒露出，页码可点） ───────────────────── */
+.queue-foot {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  padding-top: 2px;
-  font-size: 11.5px;
+  padding: 2px 6px 0;
+}
+.queue-caption {
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+
+/* 翻页器：顶部紧凑版 + 底部标准版共用一套按钮 */
+.pager {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.pager button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  font-family: var(--md-font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
+}
+.pager button:hover:not(:disabled) {
+  border-color: var(--miao-line);
+  background: var(--miao-surface-2);
+  color: var(--miao-ink);
+}
+.pager button:active:not(:disabled) {
+  transform: scale(0.92);
+}
+.pager button.is-active {
+  border-color: var(--miao-primary);
+  background: var(--miao-primary);
+  color: #fff;
+  box-shadow: 0 6px 14px -8px var(--miao-primary);
+}
+.pager button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.pager .pager-info {
+  margin-right: 4px;
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+.pager-gap {
+  padding: 0 2px;
+  font-size: 10px;
+  color: var(--miao-faint);
 }
 
 /* 复选框：原生 input 各平台外观差异大，统一压成 15×15 圆角方块 + 语义色勾选。
@@ -37,7 +459,8 @@
   flex: 0 0 auto;
   width: 15px;
   height: 15px;
-  accent-color: var(--md-pink);
+  border-radius: 4px;
+  accent-color: var(--miao-primary);
   cursor: pointer;
 }
 .ck:disabled {
@@ -51,140 +474,15 @@
   gap: 8px;
   padding-top: 2px;
   cursor: pointer;
-  color: var(--md-ink);
-}
-
-/* 表头列宽 弹性 / 120 / 160 / 150 / 90；行高 58（《02》§5.2） */
-.qt-head,
-.qt-row {
-  display: flex;
-  align-items: center;
-}
-.qt-head {
-  height: 42px;
-  padding: 0 14px;
-  border-radius: var(--md-radius-md);
-  background: var(--md-surface-2);
-  border: 1px solid var(--md-line);
-  font-size: 11px;
-  color: var(--md-muted);
-}
-.qt-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.qt-row {
-  height: 58px;
-  padding: 0 14px;
-  border-radius: var(--md-radius-sm);
-  border: 1px solid transparent;
-}
-.qt-row:hover {
-  background: var(--md-surface-2);
-}
-/*
- * 当前运行行：surface 底 + line 描边（《02》§5.2）。
- * 表格整体浮在 board 上，只有运行行被「抬」到 surface —— 这是该规格唯一自洽的读法，
- * 否则表面底与描边都无法与普通行区隔。已记入 docs/internal/spec-notes.md G-06。
- */
-.qt-row.is-running {
-  background: var(--md-surface);
-  border-color: var(--md-line);
-}
-
-/* 任务名列：多选时左边多一个复选框，故整格是「行」；文字仍竖排两行由 .qt-name-col 承担。
-   这样加复选框不会挤动后面几列的固定宽（120/160/150/90 一个都不动）。 */
-.qt-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.qt-name-col {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  text-align: left;
-}
-.qt-name-main {
-  font-size: 12.5px;
-  color: var(--md-ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.qt-name-sub {
-  font-size: 10.5px;
-  color: var(--md-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.qt-c-source {
-  flex: 0 0 120px;
-  width: 120px;
-  font-size: 11.5px;
-  color: var(--md-ink-2);
-}
-.qt-c-progress {
-  flex: 0 0 160px;
-  width: 160px;
-  font-size: 11.5px;
-  color: var(--md-ink-2);
-}
-.qt-c-status {
-  flex: 0 0 150px;
-  width: 150px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  /* 状态文字一律 ink，色相由状态点承载（《02》§5.2） */
-  color: var(--md-ink);
-  font-size: 11.5px;
-}
-/*
- * 操作列：主动作 + [更多]，右对齐。
- * ⚠️ 宽度以 `flex-basis`（128px）为准 —— 它压过行内 width，故改宽必须**同步改**
- * `QUEUE_TABLE.colAction` 与这里两处，否则 C2a（实测宽 == 令牌）会红。
- */
-.qt-c-action {
-  flex: 0 0 128px;
-  width: 128px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-/* 进度条：服务端给的 done/total，前端不自行估算 */
-.bar {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--md-line-soft);
-  overflow: hidden;
-  margin-top: 4px;
-}
-.bar > i {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--md-blue);
-  transition: width 0.35s ease;
-}
-.bar.is-done > i {
-  background: var(--md-success);
-}
-.bar.is-bad > i {
-  background: var(--md-warning);
+  color: var(--miao-ink);
 }
 
 /* ================================================================ X-C2 队列空态 */
 
+.queue-empty-card {
+  margin-top: 50px;
+  padding: 0;
+}
 .empty {
   height: 100%;
   display: flex;
@@ -197,16 +495,20 @@
 .empty-title {
   font-family: var(--md-font-display);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 16px;
   margin-top: 10px;
+  color: var(--miao-ink);
 }
 .empty-sub {
+  max-width: 380px;
   font-size: 12px;
-  color: var(--md-muted);
+  line-height: 1.7;
+  color: var(--miao-muted);
   margin-bottom: 14px;
 }
 .empty-actions {
   display: flex;
+  justify-content: center;
   gap: 8px;
 }
 
@@ -224,541 +526,819 @@
   }
 }
 
-/* ================================================================ X-C3 服务未就绪 */
-
-/* 时间线是"一条线"，铺满 900+ 宽会散掉 —— 430 刚好让最长的一步标题与状态词同行不折 */
-.notready {
-  max-width: 430px;
-  margin: 26px auto 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* ① 一行摘要：原「提示条」与「当前阶段句」说的是同一件事，合并成一行 */
-.nr-sum {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding-bottom: 16px;
-}
-/* 文本占满，右侧的「启动服务」icon 按钮靠右 */
-.nr-sum-body {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.nr-dot {
-  width: 8px;
-  height: 8px;
-  flex: 0 0 8px;
-  margin-top: 5px;
-  border-radius: 50%;
-  background: var(--md-blue);
-}
-.nr-sum.is-bad .nr-dot {
-  background: var(--md-error);
-}
-.nr-sum-t {
-  font-family: var(--md-font-display);
-  font-size: 14.5px;
-  font-weight: 700;
-}
-.nr-sum.is-bad .nr-sum-t {
-  color: var(--md-error);
-}
-.nr-sum-d {
-  margin-top: 3px;
-  font-size: 11.5px;
-  line-height: 1.6;
-  color: var(--md-muted);
-}
-
-/* ── D1「运行时未装配」独立态：缺项清单 ──
-   与时间线**并列**的另一种画法：时间是"还剩几步"，这里是"还缺几样"。
-   一个流程条会误导（用户以为在等），一张缺项单才对得上"它根本还没装"。 */
-.nr-rt {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-bottom: 16px;
-}
-.nr-rt-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-left: 17px;
-}
-.nr-rt-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 11.5px;
-}
-.nr-rt-id {
-  flex: 0 0 auto;
-  font-family: var(--md-font-numeric);
-  font-size: 11px;
-  color: var(--md-error);
-}
-.nr-rt-detail {
-  flex: 1 1 auto;
-  min-width: 0;
-  color: var(--md-ink-2);
-  line-height: 1.6;
-  /* 绝对路径可能很长，允许在任意字符处折行，别把整行撑出容器 */
-  overflow-wrap: anywhere;
-}
-.nr-rt-fix {
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--md-muted);
-  font-family: var(--md-font-numeric);
-  overflow-wrap: anywhere;
-}
-
-/* ── D1 引导页本体（`.nr-guide`）：缺什么 + 两条路并列 + 两处折叠 ──
-   🔴 卡片底色**必须走令牌**：这一页原先写的是 `var(--md-card, #fff)` /
-   `var(--md-row, rgba(128,128,128,0.06))` —— 这两个自定义属性**在项目里根本不存在**，
-   所以一直是兜底值生效，整页在深色主题下也还是一块白底（切主题跟这块无关）。
-   抽成 `--md-surface` / `--md-surface-2` 后才真的跟得上主题。 */
-.nr-guide {
-  max-width: 880px;
-  margin: 0 auto;
-  padding: 28px 24px 48px;
-}
-.nr-guide-title {
-  font-family: var(--md-font-display);
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--md-ink);
-}
-.nr-guide-sub {
-  margin-top: 8px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--md-muted);
-}
-/* 时间线下方的下载入口：装配只有一条路，按钮文本自己承载全部下载态 */
-.nr-guide-dl {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 20px;
-}
-/* LLM 段内的「使用在线翻译」提示：弱化的次要信息，ⓘ 靠右，不抢时间线主体 */
-.nr-guide-online {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--md-muted);
-}
-.nr-guide-online-text {
-  color: var(--md-muted);
-}
-.nr-guide-online-tip {
-  margin-left: auto;
-  cursor: help;
-  font-size: 12px;
-  color: var(--md-muted);
-}
-/* 两条路并列：等宽两栏，哪条都不该看起来比另一条次要 */
-.nr-guide-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-top: 22px;
-  align-items: start;
-}
-.nr-guide-card {
-  padding: 18px;
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-md);
-  background: var(--md-surface);
-}
-.nr-guide-card-t {
-  font-family: var(--md-font-display);
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--md-ink);
-}
-.nr-guide-card-d {
-  margin-top: 6px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--md-muted);
-}
-/* 时间线下方的单张卡（下载 / 在线表单）：不占两栏，避免半边空白 */
-.nr-guide-card-wide {
-  margin-top: 18px;
-}
-/* 第一个未完成模型段下的决策区：贴在段内容里，像"这一段的下一步" */
-.nr-guide-decide {
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-left: 2px solid var(--md-blue);
-  border-radius: 8px;
-  background: var(--md-row, rgba(128, 128, 128, 0.06));
-}
-.nr-guide-decide-t {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--md-ink);
-}
-.nr-guide-decide-d {
-  margin-top: 4px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--md-muted);
-}
-.nr-guide-acts {
-  margin-top: 14px;
-}
-/* ── 在线 API 内嵌表单（`OnlineApiForm`）：「使用在线翻译」卡片里那三行 + 一枚保存 ──
-   🔴 为什么不复用设置页那套 `.set-src-*`：`.set-src` 自带一条**面板内分区线**
-   （`border-top` + 上下 padding），那是设置页「翻译来源」分组内的分区语义；这里是
-   引导卡片的内嵌表单，套上去会凭空多出一条横线，读成"卡片里又分了一屏"。
-   只把**控件几何**落成这一族（`nr-form-*`），颜色与圆角仍与设置页同源。
-   🔴 几何刻意与 `.set-src-in` 不同：那里是 11px 数字字体的窄行（塞在设置的窄右列里），
-   这里是引导卡片里的主填写区，14px 才读得清。 */
-.nr-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.nr-form-line {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.nr-form-k {
-  font-size: 13px;
-  color: var(--md-muted);
-}
-.nr-form-in {
-  padding: 8px 10px;
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-sm);
-  background: var(--md-surface-2);
-  color: var(--md-ink);
-  font-size: 14px;
-}
-/*
- * 🔴 动作行**必须**是这一层 flex，而不是让按钮直接进 `.nr-form` 的 column：
- * flex 容器默认 `align-items: stretch`，按钮作为直接子项会被拉成**整行宽** ——
- * 一枚「保存」占满一行看起来像个大面板，不像一个动作。这一层只放按钮，
- * 于是 `.btn` 自己的 `inline-flex` 生效，宽度回到内容。
+/* ================================================================ X-C3 服务未就绪（引导页）
+ *
+ * 结构照设计稿 `.notready > .nr-wrap > .nr-card`：
+ *   插画 → 状态胶囊 → 大标题 → 一段说明 → 一排动作 →
+ *   （未装配）五段时间线 + 左右两栏 →（异常）三格诊断 + 逐行原因 + 日志 → 底部提示。
+ *
+ * 🔴 尺寸全部取设计稿**生效值**（`styles.css` 的 `.nr-*` 与 `.timeline`）：
+ *   页面内距 `26px 28px 40px`、卡片 `max-width 880 / r 26 / padding 24`、
+ *   插画 `104×92`、标题 `23px`、说明 `12.5px`、时间线五列等分、节点 15px。
+ *   上一版把整页收成 460 宽的窄卡，时间线被压成竖排 —— 那是"换皮"而不是还原。
+ *
+ * 动效：只在"段推进"（节点脉冲）与卡片进场用弹簧，不做无意义的位移。
  */
-.nr-form-acts {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-}
-.nr-form-empty {
-  font-size: 13px;
-  color: var(--md-muted);
-}
-.nr-guide-note {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--md-muted);
-}
-.nr-guide-compare {
-  margin-top: 22px;
-}
-/* 纯文字折叠开关：无边框无底色。蓝色=主问题（两者有什么区别），灰色=次要（排障信息）。
-   `is-quiet` 不是修饰主题而是**降一级**：两个开关同形，差别只在颜色与字号。 */
-.nr-guide-toggle {
-  padding: 0;
-  border: none;
-  background: none;
-  font-size: 13px;
-  color: var(--md-blue);
-  cursor: pointer;
-}
-.nr-guide-toggle.is-quiet {
-  font-size: 12px;
-  color: var(--md-muted);
-}
-.nr-guide-cmp {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-top: 10px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--md-muted);
-}
-.nr-guide-cmp-cell {
-  padding: 12px;
-  border-radius: var(--md-radius-sm);
-  background: var(--md-surface-2);
-}
-.nr-guide-cmp-t {
-  color: var(--md-ink);
-}
-.nr-guide-trouble {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 18px;
-}
-/* 折叠展开后的三段（缺项单 / 去设置页 / 日志）之间的间距，之前是三处行内 margin-top */
-.nr-guide-gap {
-  margin-top: 10px;
-}
 
-/* ② 时间线：节点 + 连线 + 状态词（步数与序号由 STAGES 单源派生） */
-.tl-step {
-  display: flex;
-  align-items: stretch;
-  gap: 11px;
+.notready {
+  height: 100%;
+  overflow: auto;
+  padding: 26px 28px 40px;
 }
-.tl-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 22px;
-  flex: 0 0 22px;
-}
-.tl-node {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
-  display: grid;
-  place-items: center;
-  border: 1.5px solid var(--md-line);
-  border-radius: 50%;
-  background: var(--md-surface);
-  color: var(--md-muted);
-  font-size: 11px;
-}
-.tl-node.is-done {
-  border-color: var(--md-success);
-  background: var(--md-success);
-  color: #fff;
-}
-.tl-node.is-loading {
-  position: relative;
-  border-color: var(--md-blue);
-  background: var(--md-blue-soft);
-  color: var(--md-blue);
-}
-/* loading 外圈：只留一段弧 + 匀速旋转 —— 加减速的圈在低帧率下看着像卡住 */
-.tl-node.is-loading::after {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 1.5px solid transparent;
-  border-top-color: var(--md-blue);
-  animation: tlspin 900ms linear infinite;
-}
-@keyframes tlspin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.tl-node.is-failed {
-  border-color: var(--md-error);
-  background: var(--md-error);
-  color: #fff;
-}
-.tl-line {
-  flex: 1;
-  width: 1.5px;
-  min-height: 10px;
-  margin: 4px 0;
-  background: var(--md-line);
-}
-/* 最后一步不画下行连线，否则时间线会拖出一条到屏幕底 */
-.tl-step:last-child .tl-line {
+.notready:empty {
   display: none;
 }
-/* 着色的连线段 = "走到哪了"，不用再加进度条 */
-.tl-step.is-done-step .tl-line {
-  background: var(--md-success);
-  opacity: 0.45;
+.nr-wrap {
+  max-width: 880px;
+  margin: 0 auto;
 }
-.tl-body {
-  flex: 1;
-  min-width: 0;
-  padding-bottom: 15px;
+/* 卡片右上角那一团淡色是设计稿的装饰弧（`.nr-card::after`）：纯装饰，不承载信息 */
+.nr-card {
+  position: relative;
+  overflow: hidden;
+  padding: 24px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
 }
-.tl-step:last-child .tl-body {
-  padding-bottom: 0;
+.nr-card::after {
+  content: '';
+  position: absolute;
+  right: -30px;
+  top: -40px;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--miao-accent-soft), transparent 68%);
+  opacity: 0.8;
+  pointer-events: none;
 }
-.tl-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+.nr-illu {
+  position: relative;
+  z-index: 1;
+  width: 104px;
+  height: 92px;
+  margin-bottom: 12px;
 }
-.tl-title {
+.nr-illu .mascot-svg {
+  width: 100%;
+  height: 100%;
+}
+.nr-kicker {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.nr-title {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 6px;
+  font-family: var(--md-font-display);
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--miao-ink);
+}
+.nr-desc {
+  position: relative;
+  z-index: 1;
+  max-width: 540px;
+  margin: 0;
   font-size: 12.5px;
-  color: var(--md-muted);
+  line-height: 1.7;
+  color: var(--miao-text);
 }
-.tl-step.is-done-step .tl-title {
-  color: var(--md-ink);
+.nr-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
 }
-.tl-step.is-current .tl-title {
-  color: var(--md-ink);
+/* 时间线上方那行现状（设计稿 `.nr-guide-note` 的位置）：次要信息，不与说明抢层级 */
+.nr-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--miao-muted);
 }
-.tl-step.is-failed .tl-title {
-  color: var(--md-ink);
+
+/* ── 五段时间线（设计稿 `.timeline`）：一条线串五颗节点，五列等分 ── */
+.timeline {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
+  margin-top: 18px;
 }
-.tl-state {
-  margin-left: auto;
-  font-size: 10.5px;
-  white-space: nowrap;
-  color: var(--md-muted);
+.timeline-step {
+  position: relative;
+  padding-top: 22px;
+  text-align: center;
 }
-.tl-step.is-done-step .tl-state {
-  color: var(--md-success);
+/* 连接线：首尾两段各收一半 —— 否则时间线会从卡片左缘一路画到右缘，像一条分隔线 */
+.timeline-step::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--miao-line);
 }
-.tl-step.is-current .tl-state {
-  color: var(--md-blue);
-  font-weight: 500;
+.timeline-step:first-child::before {
+  left: 50%;
 }
-.tl-step.is-failed .tl-state {
-  color: var(--md-error);
-  font-weight: 500;
+.timeline-step:last-child::before {
+  right: 50%;
 }
-/* 阶段明细：真实日志末行原文（等宽、过长截断）—— 不是设计好的数字 */
-.tl-detail {
-  margin-top: 5px;
-  padding: 4px 7px;
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-xs);
-  background: var(--md-surface-2);
-  font-family: var(--md-font-numeric);
-  font-size: 10.5px;
-  color: var(--md-muted);
+.timeline-node {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 1;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--miao-line-strong);
+  border-radius: 50%;
+  background: var(--miao-surface);
+  transform: translateX(-50%);
+  transition:
+    background var(--miao-dur-base) ease,
+    border-color var(--miao-dur-base) ease,
+    transform var(--miao-dur-base) var(--miao-ease-spring);
+}
+.timeline-step strong {
+  display: block;
+  font-family: var(--md-font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-text);
+}
+.timeline-step small {
+  display: block;
+  margin-top: 2px;
+  font-size: 9.5px;
+  color: var(--miao-faint);
+}
+/* 完成：实心 success + 中心白点（设计稿用 `::after` 画那颗点，不是打勾字符） */
+.timeline-step[data-state='done'] .timeline-node {
+  border-color: var(--miao-success);
+  background: var(--miao-success);
+}
+.timeline-step[data-state='done'] .timeline-node::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: #fff;
+  transform: scale(0.35);
+}
+/* 进行中：主色实心 + 外环脉冲 —— 这是"它在动"的唯一信号，停掉就与卡住分不开 */
+.timeline-step[data-state='active'] .timeline-node {
+  border-color: var(--miao-primary);
+  background: var(--miao-primary);
+  box-shadow: 0 0 0 4px var(--miao-primary-wash);
+  animation: miao-pulse-node 1.8s ease-in-out infinite;
+}
+.timeline-step[data-state='active'] strong {
+  color: var(--miao-ink);
+}
+.timeline-step[data-state='failed'] .timeline-node {
+  border-color: var(--miao-danger);
+  background: var(--miao-danger);
+}
+.timeline-step[data-state='failed'] strong {
+  color: var(--miao-danger);
+}
+@keyframes miao-pulse-node {
+  50% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+/* 失败时的真实日志末行（等宽、单行截断）—— 不是设计好的数字 */
+.timeline-detail {
+  margin-top: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xs);
+  background: var(--miao-surface-2);
+  font-family: var(--miao-font-mono);
+  font-size: 11px;
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ③ 一行 meta：正常时它是"都活着"，不值得占三行；异常时才转红 */
+/* ── 左右两栏（设计稿 `.nr-aside`）：左"要下什么"，右"下到哪" ── */
+.nr-aside {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+.nr-panel {
+  padding: 14px 16px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-md);
+  background: var(--miao-surface);
+}
+.nr-panel h4 {
+  margin: 0 0 6px;
+  font-family: var(--md-font-display);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.nr-panel p {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--miao-muted);
+}
+.nr-panel .nr-path {
+  font-family: var(--miao-font-mono);
+  font-size: 10px;
+  word-break: break-all;
+  color: var(--miao-text);
+}
+/* 三格诊断（设计稿 `.nr-diag`）：每格「标签 + 加粗值」 */
+.nr-diag {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+.nr-diag span {
+  padding: 8px 10px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xs);
+  background: var(--miao-surface-2);
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+.nr-diag b {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  font-variant-numeric: tabular-nums;
+}
+/* 逐行原因（设计稿 `.nr-list` / `.nr-list-row`）：图标 + 一句 + 右端等宽代码 */
+.nr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.nr-list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--miao-r-xs);
+  background: var(--miao-surface-2);
+  font-size: 10.5px;
+  color: var(--miao-text);
+}
+.nr-list-row svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+.nr-list-row svg.is-ok {
+  color: var(--miao-success);
+}
+.nr-list-row svg.is-bad {
+  color: var(--miao-danger);
+}
+.nr-list-row code {
+  margin-left: auto;
+  font-family: var(--miao-font-mono);
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 日志块已抽成通用单元 `.log-block`（引导页与下载页共用，带悬停浮现的复制按钮）——
+   引导页这一处用 `is-compact` 档（最大高度 94）。此处的旧规则随之退役。 */
+/* 缺项单（D1）：逐项给绝对路径与装法，不是笼统一句话 */
+.nr-rt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.nr-rt-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 2px;
+}
+.nr-rt-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+.nr-rt-id {
+  flex: none;
+  font-family: var(--miao-font-mono);
+  font-size: 12px;
+  color: var(--miao-danger);
+}
+.nr-rt-detail {
+  flex: 1;
+  min-width: 0;
+  color: var(--miao-text);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.nr-rt-fix {
+  font-family: var(--miao-font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--miao-muted);
+  overflow-wrap: anywhere;
+}
+/* 底部提示（设计稿 `.form-hint` 的位置）：一行小字 + 图标，不占动作区 */
+.nr-foot-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 12px 0 0;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--miao-faint);
+}
+.nr-foot-hint svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 1px;
+  color: var(--miao-accent-ink);
+}
+/* 一行 meta（三进程 / 端口）：正常时它是"都活着"，不值得占三行 */
 .nr-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding-top: 16px;
+  margin-top: 16px;
 }
 .mchip {
   padding: 3px 9px;
-  border: 1px solid var(--md-line);
-  border-radius: 999px;
-  background: var(--md-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-full);
+  background: var(--miao-surface-2);
   font-family: var(--md-font-numeric);
-  font-size: 10.5px;
-  color: var(--md-ink-2);
+  font-size: 11px;
+  color: var(--miao-text);
   white-space: nowrap;
 }
 .mchip.is-bad {
-  border-color: var(--md-error);
-  background: var(--md-surface-2);
-  color: var(--md-error);
+  border-color: color-mix(in srgb, var(--miao-danger) 32%, transparent);
+  background: var(--miao-danger-soft);
+  color: var(--miao-danger);
 }
-
-/* ④ 一行动作 */
-.nr-acts {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 14px;
+/* 窄窗：时间线五列在 720 以下每格只剩一百来 px，改两行（3 + 2）并收内距 */
+@media (max-width: 900px) {
+  .notready {
+    padding: 20px 16px 32px;
+  }
+  .nr-aside {
+    grid-template-columns: 1fr;
+  }
 }
-.logbox {
-  max-height: 168px;
-  overflow: auto;
-  padding: 10px 12px;
-  border-radius: var(--md-radius-sm);
-  background: var(--md-surface-2);
-  border: 1px solid var(--md-line-soft);
-  font-family: var(--md-font-numeric);
-  font-size: 10.5px;
-  line-height: 1.6;
-  color: var(--md-ink-2);
-  white-space: pre-wrap;
-  word-break: break-all;
-  -webkit-user-select: text;
-  user-select: text;
+@media (max-width: 720px) {
+  .timeline {
+    grid-template-columns: repeat(3, 1fr);
+    row-gap: 14px;
+  }
+  .nr-diag {
+    grid-template-columns: 1fr;
+  }
 }
-
 /* ================================================================ X-D1 本地漫画库 */
 
+/*
+ * 书架页容器（设计稿 `.library-wrap`）：**grid 两栏** + 整页内边距。
+ * 旧写法是 flex + gap，页面本身不留白 —— 两侧栏会贴到窗口边缘。
+ */
 .lib {
-  display: flex;
+  /* 卡片网格的统一间距：话卡与页卡同用，两屏切换时节奏一致 */
+  --miao-card-gap: 12px;
+  display: grid;
+  /*
+   * 左栏宽度取设计稿 `theme.css:398-402`（它覆盖 styles.css:1039 的 `296px`）：
+   * `clamp(260px, 19vw, 320px)` —— 窗口越宽左栏按比例放宽，但夹在 260~320 之间。
+   * 固定 260 时宽屏上左栏显得过窄（书名列要省略号），固定 296 时窄窗又太挤。
+   * `gap` 同理按 theme.css 取 14（styles.css 是 12，被覆盖）。
+   */
+  grid-template-columns: var(--lib-left-w, clamp(260px, 19vw, 320px)) minmax(0, 1fr);
   gap: 14px;
   height: 100%;
   min-height: 0;
+  padding: 14px 22px 18px;
 }
-/* 左栏 260（《02》§5.5） */
+/*
+ * 窄窗三档（设计稿 theme.css:590-625 的生效值）：
+ * · ≤1360 左栏 252；
+ * · ≤1180 左栏 236；
+ * · ≤1040 改成**上下叠放**（上 210 书架、下页区）—— 再窄下去左右并排两边都读不清。
+ * 🔴 2026-10-26 修：此前只有 ≤1040 一档（250），且 `--lib-left-w` 由行内注入、
+ *    把 `clamp()` 与本档全部压掉 ⇒ 1180 宽下实测恒定 260。
+ *    现在行内注入已移除，这三档才真正生效。
+ */
+@media (max-width: 1360px) {
+  .lib {
+    grid-template-columns: 252px minmax(0, 1fr);
+  }
+}
+@media (max-width: 1180px) {
+  .lib {
+    grid-template-columns: 236px minmax(0, 1fr);
+  }
+}
+@media (max-width: 1040px) {
+  .lib {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 210px minmax(0, 1fr);
+    padding: 12px 16px 16px;
+  }
+  /* 更窄时对照页改成**上下叠放**（设计稿 ≤1040） */
+  .compare-panes {
+    flex-direction: column;
+  }
+}
+/*
+ * 队列页的窄窗列宽（设计稿 ≤1040 那一档）：四列从**定宽**换成**比例**。
+ * 不换的话 26+120+160+150+128 就 584px，加上侧栏与内边距，1000px 的窗口直接溢出。
+ * ⚠️ 只覆盖 `--qt-cols` 的**窄窗变体**：基础档四列像素仍是 `QUEUE_TABLE` 的事实源
+ *    （规格自检 C2a 逐列量它们），改基础值会让那条断言失去意义。
+ */
+@media (max-width: 1040px) {
+  .queue-table {
+    --qt-cols: 24px minmax(180px, 1.3fr) 0.5fr minmax(120px, 1fr) 0.55fr auto;
+  }
+  .qt-row {
+    gap: 8px;
+  }
+  /* 对照页两栏在窄窗收紧内边距（设计稿同档） */
+  .compare-panes {
+    gap: 10px;
+    padding: 12px;
+  }
+}
+/* 左栏 260（《02》§5.5）—— ver3 起是一张独立面板，卡片感来自描边 + 弥散阴影 */
+/* 书架头（设计稿 .shelf-head）：标题 + 部数，14/14/8 内边距 */
+.shelf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 14px 8px;
+}
+.shelf-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--md-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.shelf-count {
+  font-family: var(--md-font-numeric);
+  font-size: 9.5px;
+  /* 设计稿 `styles.css:1044`：部数是**次要计数**，用 faint（比 muted 更淡一档） */
+  color: var(--miao-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 详情头（设计稿 .book-hero）：大封面 + 信息列，底部一条虚线分隔。
+ * 虚线（而不是实线）是刻意的：它是"资料区 / 内容区"的软分界，不是两个卡片的边。
+ */
+.book-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: clamp(16px, 1.8vw, 24px);
+  padding-bottom: 18px;
+  /*
+   * 设计稿 `theme.css:417` 把底边从 styles.css 的 **dashed** 改成 **solid**（颜色 line）——
+   * 详情头是"资料区/内容区"的硬分界，虚线会让它读成"可拖动的分隔条"。
+   */
+  border-bottom: 1px solid var(--miao-line);
+}
+/* 大封面（设计稿 `theme.css:414-419` 的生效值）：
+   `clamp(96px, 8vw, 124px)` 宽 + `aspect-ratio: 3/4.1` + r12 ——
+   宽度随窗口伸缩，高度由宽高比推出（不再写死 130）。 */
+.book-big-cover {
+  flex: none;
+  width: clamp(96px, 8vw, 124px);
+  aspect-ratio: 3 / 4.1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: linear-gradient(145deg, var(--miao-primary), var(--miao-accent));
+  color: rgba(255, 255, 255, 0.94);
+  font-family: var(--md-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  word-break: break-all;
+  box-shadow:
+    0 18px 36px -24px rgba(45, 59, 70, 0.6),
+    0 0 0 1px rgba(45, 59, 70, 0.06);
+  overflow: hidden;
+  position: relative;
+}
+/* 高光（设计稿 `.book-big-cover::after`）：一层斜向的亮/暗渐变，让平面渐变读成"有厚度的封面" */
+.book-big-cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.22), transparent 40%, rgba(0, 0, 0, 0.12));
+  pointer-events: none;
+}
+/*
+ * 竖排书脊（设计稿 `.book-big-cover .obi`）：左侧一条白条 + 竖排书名。
+ *
+ * 它替代的是旧写法里"整张封面居中放大字"—— 那样四个字会铺满封面、看不出是本书；
+ * 白条 + 竖排是书籍封面最容易被认出的那个特征。
+ */
+.book-big-cover .obi {
+  position: absolute;
+  left: 7px;
+  top: 8px;
+  bottom: 8px;
+  /* 设计稿 `theme.css:425` 的生效值：宽 20（styles.css 是 18）、92% 白底 */
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--miao-ink);
+  font-family: var(--md-font-display);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  writing-mode: vertical-rl;
+  z-index: 1;
+}
+/*
+ * 无封面时的字形（设计稿 `coverGlyph()`：`<span>${glyph}</span>`）：
+ * 书名首字，24px·700（设计稿 `.book-big-cover { font-size: 24px; font-weight: 700; letter-spacing: .08em }`）。
+ * **只有没配封面时才渲染** —— 有真图时再叠一个字会读成"图上贴了个字"。
+ */
+.book-big-cover .glyph {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  /* 给左侧竖排书脊让出位置，字居中在剩余区域而不是整张封面的几何中心 */
+  padding-left: 18px;
+  line-height: 1.1;
+}
+/*
+ * 配了真封面的封面（设计稿 `coverStyle()` 的 `background-image` 分支）：
+ * 渐变底被真图盖住，`::after` 的高光仍叠在上面（它让平面图读成"有厚度"）。
+ */
+.book-big-cover.has-image {
+  background: none;
+  background-size: cover;
+  background-position: center;
+}
+.book-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.book-info h2 {
+  font-family: var(--md-font-display);
+  /* 设计稿 `theme.css:426` 的生效值：`clamp(22px, 1.9vw, 30px)`（覆盖 styles.css 的 22） */
+  font-size: clamp(22px, 1.9vw, 30px);
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 3px;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+/* 书名上方的 kicker（设计稿 `.book-info .kicker`）：独占一行，与标题留 4px */
+.book-info .kicker {
+  display: block;
+  margin-bottom: 4px;
+}
+.book-author {
+  margin-top: 3px;
+  /* 设计稿 `.book-info .book-author { font-size: calc(11.5px * var(--ui-scale)) }` */
+  font-size: 11.5px;
+  color: var(--miao-muted);
+}
+.book-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.book-path {
+  margin-top: 8px;
+  max-width: 100%;
+  font-family: var(--miao-font-mono);
+  font-size: 9.5px;
+  /* 设计稿 `theme.css:427`：`color: var(--muted)`（覆盖 styles.css 的 faint）——
+     路径是"这本书在哪"的正文信息，faint 太淡、在长路径上几乎读不出来 */
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.book-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 13px;
+}
+/*
+ * 「章节」小标题（设计稿 `.book-section-head`）：标题 + 计数 + 右侧动作。
+ *
+ * 上边距 22 而不是 18：它与上面的详情头之间是**两个区块**（资料 / 内容），
+ * 只给 18 时两块会读成同一段。
+ */
+.book-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0 12px;
+}
+/* 「重译整本」推到最后：它作用于整本书，与标题下的「共 N 话」不是同一层信息 */
+.book-section-head .book-retranslate {
+  margin-left: auto;
+}
+.book-section-head h3 {
+  font-family: var(--md-font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.book-section-head .count {
+  font-size: 9.5px;
+  color: var(--miao-faint);
+}
+
+/* 左栏「我的书架」（设计稿 `.shelf`）：独立面板，r-lg + shadow-1 */
 .lib-left {
-  flex: 0 0 260px;
-  width: 260px;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  /* 设计稿 `theme.css:403` 的 `.shelf { border-radius: var(--r-xl) }` = 26px（不是 lg 的 20） */
+  border-radius: var(--miao-r-xl);
+  box-shadow: var(--miao-shadow-1);
   overflow: hidden;
 }
 .lib-left-list {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 6px;
+  padding: 0 7px 8px;
 }
+/*
+ * 书架行（设计稿 `theme.css:404` 的生效值：`padding: 8px` / `r12` / `gap 9`）。
+ *
+ * 结构是「容器 + 主按钮 + 行尾 ⋯」三段而不是整行一个 button：设计稿的行尾有一枚
+ * 只在悬停时出现的更多操作按钮，把它塞进行 button 里就是嵌套交互元素
+ * （HTML 不合法，读屏器会把两个动作念成一个）。
+ */
 .lib-item {
+  position: relative;
   width: 100%;
-  text-align: left;
-  padding: 8px 9px;
-  border-radius: var(--md-radius-xs);
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 9px;
+  padding: 8px;
+  border-radius: 12px;
+  text-align: left;
+  color: var(--miao-text);
+  transition:
+    background var(--miao-dur-fast) ease,
+    box-shadow var(--miao-dur-fast) ease;
 }
+.lib-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+/* 悬停只换底色（设计稿 `.book-row:hover`）：不加位移 —— 书架是长列表，
+   整列一起左右挪 1px 会读成"列表在抖"，而底色变化已足够指示"这一行可以点" */
 .lib-item:hover {
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
+/* 选中：主色淡底 + 内描边（设计稿 `.book-row.is-active`）。
+   设计稿没有额外的左缘选中条 —— 淡底 + 描边已经是两重指示，再叠一条会与行内封面抢视觉 */
 .lib-item.is-active {
-  background: var(--md-pink-soft);
+  background: var(--miao-primary-soft);
+  box-shadow: inset 0 0 0 1px var(--miao-primary-line);
+}
+/* 行尾「⋯」（设计稿 `.book-more`）：悬停或选中才出现，不占正文宽度 */
+.lib-more {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--miao-muted);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease;
+}
+.lib-item:hover .lib-more,
+.lib-item.is-active .lib-more,
+.lib-more:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.lib-more:hover {
+  background: var(--miao-surface);
+  color: var(--miao-ink);
 }
 .lib-item-name {
+  font-family: var(--md-font-display);
   font-size: 12px;
+  font-weight: 700;
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .lib-item-meta {
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 9.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+/*
+ * 书架脚（设计稿 `.shelf-foot`）：容量 / 已隐藏 / 翻页器同一行。
+ *
+ * 旧写法是 `space-between` 两栏（容量贴左、隐藏贴右），翻页器另起一块在下面 ——
+ * 三件东西各占一行，左栏本来就只有 260 宽，纵向空间全被吃掉。
+ */
 .lib-left-foot {
-  border-top: 1px solid var(--md-line-soft);
+  border-top: 1px solid var(--miao-line);
   padding: 9px 12px;
-  font-size: 11px;
-  color: var(--md-muted);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+/* 容量数字（设计稿 `.shelf-stat b`）：正文色 + 加粗，与说明文字拉开层级 */
+.shelf-stat {
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.shelf-stat b {
+  font-family: var(--md-font-numeric);
+  font-weight: 700;
+  color: var(--miao-text);
 }
 /* 搜索框：贴在左栏顶部，与列表之间留一道分隔线 */
 .lib-search {
   position: relative;
   display: flex;
   align-items: center;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--md-line-soft);
+  padding: 0 12px 8px;
   flex: 0 0 auto;
 }
 .lib-search-ico {
   position: absolute;
-  left: 20px;
-  color: var(--md-muted);
+  left: 22px;
+  color: var(--miao-muted);
   pointer-events: none;
 }
 /*
@@ -769,126 +1349,596 @@
  * 两者**特异性相同**（都是 0,1,0），胜负只由**出现顺序**决定；而 `.input` 定义在
  * 本分片**更靠后**的位置（通用表单件集中放在文件后半段）⇒ 它赢，于是这里的
  * height/padding 被整条盖掉。且 `.input` 用的是 **`padding: 0 11px` 简写**，会把
- * 左右 padding 一起重置为 11px —— 后果是放大镜图标（`left:20px`）与清除 ✕
- *（`right:16px`）直接压在输入的文字上。
+ * 左右 padding 一起重置为 11px —— 后果是放大镜图标与清除 ✕ 直接压在输入的文字上。
  *
  * 靠"把这条挪到 .input 后面"也能绿，但那是**用顺序换正确性**：下次有人整理分片
  * 顺序就会静默复发。复合选择器让胜负与顺序脱钩，才是这里要的表达。
  */
 .lib-search .lib-search-input {
   width: 100%;
-  height: 30px;
+  height: 32px;
+  /* `.input` 带 `min-height: 34px` —— 只写 height 会被它压回 34，必须一并收窄 */
+  min-height: 32px;
   padding-left: 28px;
-  padding-right: 26px;
+  padding-right: 28px;
+  border-radius: 10px;
+  background: var(--miao-surface-2);
   font-size: 12px;
+}
+.lib-search .lib-search-input:focus {
+  background: var(--miao-surface);
 }
 .lib-search-clear {
   position: absolute;
-  right: 16px;
-  display: flex;
-  align-items: center;
-  color: var(--md-muted);
-}
-.lib-search-clear:hover {
-  color: var(--md-ink);
-}
-.lib-empty {
-  padding: 16px 10px;
-  font-size: 11.5px;
-  color: var(--md-muted);
-  text-align: center;
-}
-/* 左栏分页器（窄栏，故用紧凑两行式） */
-.lib-pager {
-  flex: 0 0 auto;
+  right: 20px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 7px 8px;
-  border-top: 1px solid var(--md-line-soft);
-  font-size: 11px;
+  border-radius: 50%;
+  background: var(--miao-surface-3);
+  color: var(--miao-muted);
+  transition:
+    color var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease;
 }
-/* 「已隐藏 N」入口：左栏底部的一条文字按钮 */
+.lib-search-clear:hover {
+  background: var(--miao-line);
+  color: var(--miao-ink);
+}
+.lib-empty {
+  padding: 18px 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--miao-muted);
+  text-align: center;
+}
+/*
+ * 左栏里的整块空态（设计稿 `.empty`）：插画 + 标题 + 一句说明 + 出口按钮。
+ *
+ * 左栏只有 260 宽，设计稿在右栏用的 46px 上下留白搬过来会把三行文案挤出可视区，
+ * 故竖向留白收到 26px —— 这是**同一个空态的窄栏形态**，不是另一套空态。
+ */
+.lib-empty-state {
+  height: auto;
+  padding: 26px 12px;
+  gap: 6px;
+}
+.lib-empty-state h3 {
+  font-family: var(--md-font-display);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.lib-empty-state p {
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--miao-muted);
+}
+.lib-empty-state .empty-actions {
+  margin-top: 6px;
+}
+/* 空态插画（设计稿 `.empty-art`）：88×74、九成不透明 —— 它是装饰，不该比文案更抢眼 */
+.empty-art {
+  width: 88px;
+  height: 74px;
+  margin-bottom: 4px;
+  opacity: 0.9;
+  overflow: visible;
+}
+/* 左栏翻页器（设计稿 `.shelf-pager`）：紧凑方钮，塞得进 260 宽的书架脚 */
+.shelf-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+.shelf-pager-btn {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  font-family: var(--md-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
+}
+.shelf-pager-btn:hover:not(:disabled) {
+  background: var(--miao-surface-2);
+  color: var(--miao-ink);
+}
+.shelf-pager-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+.shelf-pager-btn.is-active {
+  background: var(--miao-primary);
+  color: #fff;
+}
+.shelf-pager-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+/* 「已隐藏 N」入口：书架脚里的一条文字按钮（设计稿用 `.text-btn`，这里保留图标） */
 .lib-hidden-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
-  color: var(--md-muted);
+  padding: 3px 6px;
+  border-radius: 8px;
+  font-family: var(--md-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  transition:
+    color var(--miao-dur-fast) ease,
+    background var(--miao-dur-fast) ease;
 }
 .lib-hidden-link:hover {
-  color: var(--md-ink);
+  background: var(--miao-surface-2);
+  color: var(--miao-primary-ink);
 }
 
+/*
+ * 右栏（设计稿 `.book-panel`）：**一张独立卡片**，自身滚动、18/20/26 内边距。
+ * 旧写法是裸容器（无底无框），内容直接铺在页面底色上，与左栏不是同一层级。
+ */
 .lib-right {
-  flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
-}
-.lib-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-}
-.lib-head-titles {
-  min-width: 0;
-  flex: 1;
-}
-.lib-head-name {
-  font-family: var(--md-font-display);
-  font-weight: 700;
-  font-size: 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.lib-head-path {
-  font-size: 10.5px;
-  color: var(--md-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  direction: rtl;
-  text-align: left;
-}
-
-.lib-grid-wrap {
-  flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 14px;
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  /* 设计稿 `theme.css:411` 的 `.book-panel`：r-xl(26) + `padding: clamp(18px, 1.8vw, 28px)` */
+  border-radius: var(--miao-r-xl);
+  box-shadow: var(--miao-shadow-1);
+  padding: clamp(18px, 1.8vw, 28px);
+  position: relative;
 }
-.lib-grid {
+/*
+ * 右上角网点装饰（设计稿 `.book-panel::before`：90×40 / 6px 点阵 / 135° 渐隐遮罩 / 45% 不透明）。
+ * 它给这张大白卡一点"印刷品"的质感；`pointer-events: none` 保证它不挡点击。
+ */
+.lib-right::before {
+  content: '';
+  position: absolute;
+  right: 22px;
+  top: 18px;
+  width: 90px;
+  height: 40px;
+  color: var(--miao-line);
+  opacity: 0.45;
+  background-image: radial-gradient(currentColor 1px, transparent 1.2px);
+  background-size: 6px 6px;
+  -webkit-mask-image: linear-gradient(135deg, #000, transparent);
+  mask-image: linear-gradient(135deg, #000, transparent);
+  pointer-events: none;
+}
+/*
+ * 空库（设计稿的空分支）：**单栏**，整页只留一块居中空态。
+ * 左栏让位而不是渲染一张空面板 —— 两个都在说"没有东西"时，用户不知道该看哪一个。
+ */
+.lib-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+.lib-empty-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+}
+.lib-empty-page .ui-empty {
+  flex: none;
+  padding: 0;
+  gap: 8px;
+}
+.lib-empty-page .empty-title {
+  font-size: 15px;
+}
+.lib-empty-page .empty-sub {
+  max-width: 360px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+/*
+ * 搜索分组态（设计稿 §7.2 屏 A′）的头部：标题 + 命中统计。
+ * 左栏此刻只列命中的作品，右栏才是分组结果 —— 头部在右栏，说明"这一屏装的是什么"。
+ */
+.search-result-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.search-result-head h2 {
+  font-family: var(--md-font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-result-head p {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+
+/* 一组命中（设计稿 `.search-group`）：组标题 + 命中行 */
+.search-group {
+  margin-top: 8px;
+}
+/* 组标题行（设计稿 `.search-group-head`）：可折叠的按钮 + 右侧「打开书架」 */
+.search-group-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 4px;
+  border-radius: 7px;
+}
+.search-group-head:hover {
+  background: var(--miao-surface-2);
+}
+/* 组标题按钮本体：图标 + 封面缩略 + 书名 + 命中数 */
+.search-group-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  text-align: left;
+  cursor: pointer;
+}
+/* 折叠箭头（设计稿 `.ico.is-collapsed`）：收起时朝右 */
+.search-group-head .ico {
+  flex: 0 0 auto;
+  color: var(--miao-muted);
+  transition: transform var(--miao-dur-fast) var(--miao-ease-out);
+}
+.search-group-head .ico.is-collapsed {
+  transform: rotate(-90deg);
+}
+/* 组标题的小封面（设计稿 `.book-thumb` 的 26×34 变体）：给一眼认书的抓手 */
+.search-group-head .book-thumb {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: var(--miao-surface-2);
+  font-family: var(--md-font-display);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  overflow: hidden;
+}
+.search-group-head strong {
+  font-family: var(--md-font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-group-head span {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+/* 「打开书架」（设计稿 `.book-jump`）：组标题右侧的跳转入口 */
+.book-jump {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 9.5px;
+  color: var(--miao-primary-ink);
+  padding: 3px 6px;
+  border-radius: 5px;
+}
+.book-jump:hover {
+  background: var(--miao-primary-soft);
+}
+
+/* 一条命中（设计稿 `.search-result-row`）：缩进到组标题的书名下方 */
+.search-result-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 22px;
+  border-radius: 8px;
+  transition: background var(--miao-dur-fast) ease;
+}
+.search-result-row:hover {
+  background: var(--miao-surface-2);
+}
+.search-result-row .ico {
+  flex: 0 0 auto;
+  color: var(--miao-faint);
+}
+/* 命中行主按钮：只有标题可点（右侧是状态与动作，不该一起被读成一个按钮） */
+.sr-main {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.sr-main:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.sr-title {
+  display: block;
+  font-size: 12px;
+  color: var(--miao-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 「N / M 页」（设计稿 `.sr-sub`）：行尾的页数，靠右但不抢状态徽标的位置 */
+.sr-sub {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+
+/*
+ * 话卡网格（设计稿 `.chapter-grid`）：auto-fill 每列至少 148px。
+ * 设计稿在宽屏下把下限抬到 `clamp(150px, 12vw, 200px)` —— 用 clamp 而不是写死 148：
+ * 右栏宽度随窗口变化，固定下限会让 1440 以上的屏只剩两列、卡片被拉得很扁。
+ */
+.chapter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(162px, 11.5vw, 188px), 1fr));
+  /* 与 .page-grid 同一档间距：两个详情页并排看时卡片节奏一致 */
+  gap: var(--miao-card-gap);
+}
+/*
+ * 页网格（设计稿 `.page-grid`）：每列至少 112px —— 比话卡更窄，一屏能看更多页。
+ * 同样走 clamp：缩略图太宽时一屏只看得见三四页，"翻一遍"的成本就上去了。
+ */
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(114px, 9.4vw, 154px), 1fr));
+  gap: var(--miao-card-gap);
+}
+
+/*
+ * 话内三段（设计稿 .cv-head / .cv-info / .cv-foot）：
+ * 头部一条虚线分隔、中间一排状态徽标、底部一条统计与提示。
+ */
+.cv-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--miao-line) 70%, var(--miao-muted));
+}
+.cv-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px 0 5px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-family: var(--md-font-display);
+  /* 设计稿 `.cv-back { font-size: calc(10.5px * var(--ui-scale)) }` */
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  cursor: pointer;
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease;
+}
+.cv-back:hover {
+  background: var(--miao-surface-2);
+  color: var(--miao-ink);
+}
+.cv-title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.cv-title strong {
+  font-family: var(--md-font-display);
+  /* 设计稿 `theme.css:453` 的生效值：`clamp(17px, 1.5vw, 22px)`（覆盖 styles.css 的 16） */
+  font-size: clamp(17px, 1.5vw, 22px);
+  font-weight: 700;
+  color: var(--miao-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv-title span {
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+.cv-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  /* 设计稿 `.cv-actions { gap: 5px }` */
+  gap: 5px;
+}
+.cv-info {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0;
 }
-/* 网格卡 110×165 r12（《02》§5.5） */
+.cv-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--miao-line);
+  font-size: 10px;
+  color: var(--miao-muted);
+}
+/* 弹性空隙（设计稿 `.cv-foot .spacer`）：把右侧提示推到行尾 */
+.cv-foot .spacer {
+  flex: 1;
+}
+/* 页脚里的翻页（设计稿 `.cv-top-pager`）：只在多页时出现，与统计同一行 */
+.cv-top-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+/*
+ * 搜索分组态的脚注：与 `.cv-foot` 同一套视觉，但**不带**上边距 ——
+ * 它跟在命中行列表后面，间距已由 `.search-group` 给过，再加一次会空出两倍。
+ */
+.lib-search-foot {
+  margin-top: 10px;
+}
+/*
+ * 页卡（设计稿 .page-card）：宽度交给网格，缩略图按 3/4.16 自适应 ——
+ * 不再写死 110x165。写死时窗口一变宽右栏就留一大片空白，且每格宽度与列宽脱节。
+ */
+.page-card {
+  padding: 0;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface-2);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  transition:
+    transform var(--miao-dur-fast) var(--miao-ease-out),
+    box-shadow var(--miao-dur-fast) ease,
+    border-color var(--miao-dur-fast) ease;
+}
+.page-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: var(--miao-primary-line);
+  /* 设计稿 `theme.css` 的 `.page-card:hover` 用的是 `shadow-1`（一级阴影），不是二级 */
+  box-shadow: var(--miao-shadow-1);
+}
+.page-card:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.page-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 3 / 4.16;
+  background: var(--miao-surface-3);
+  overflow: hidden;
+}
+.page-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* 状态角标（设计稿 `.page-stamp`：右上 / 18 高 / padding 0 5 / r4 / 8.5px·700，
+   底是 92% 白 + **blur 4px**，默认字色 success、边框 30% success） */
+.page-stamp {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  font-size: 8.5px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--miao-surface) 92%, transparent);
+  color: var(--miao-success);
+  border: 1px solid color-mix(in srgb, var(--miao-success) 30%, transparent);
+  backdrop-filter: blur(4px);
+}
+.page-stamp.is-done {
+  color: color-mix(in srgb, var(--miao-success) 82%, #000);
+  border-color: color-mix(in srgb, var(--miao-success) 30%, transparent);
+}
+.page-stamp.is-pending {
+  /* 设计稿 `.page-stamp.is-pending { color: var(--accent-deep); border-color: var(--accent-line) }`
+     本仓对应令牌是 `--miao-accent-ink` / `--miao-accent-line`（没有 accent-deep 这个名字） */
+  color: var(--miao-accent-ink);
+  border-color: var(--miao-accent-line);
+}
+.page-stamp.is-missing {
+  /* 设计稿 `.page-stamp.is-missing` 用 faint 而不是 danger —— 缺页是"没有原图"，不是错误 */
+  color: var(--miao-faint);
+  border-color: var(--miao-line);
+}
+/* 底部标签行（设计稿 .page-label）：左「第 N 页」、右文件名 */
+.page-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 7px;
+  border-top: 1px solid var(--miao-line);
+  background: var(--miao-surface);
+  /* 设计稿 `.page-label { font-size: 9px }`（不是 10） */
+  font-size: 9px;
+  color: var(--miao-muted);
+}
+.page-label b {
+  font-weight: 700;
+  color: var(--miao-text);
+  white-space: nowrap;
+}
+.page-label em {
+  font-style: normal;
+  font-family: var(--miao-font-mono);
+  font-size: 8.5px;
+  color: var(--miao-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 网格卡 110×165 r12（《02》§5.5）—— 尺寸与圆角是 C5 的实测对象，勿改 */
 .grid-card {
   width: 110px;
   height: 165px;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid var(--md-line);
-  background: var(--md-surface-2);
+  border: 1px solid var(--miao-line);
+  background: var(--miao-surface-2);
   position: relative;
   display: flex;
   flex-direction: column;
+  transition:
+    transform var(--miao-dur-base) var(--miao-ease-spring),
+    border-color var(--miao-dur-fast) ease,
+    box-shadow var(--miao-dur-base) ease;
 }
 .grid-card:hover {
-  border-color: var(--md-pink);
+  border-color: var(--miao-primary-line);
+  transform: translateY(-2px);
+  box-shadow: var(--miao-shadow-2);
 }
 /* 缺页卡：不可点，也不该给「可点」的悬停反馈 */
 .grid-card:disabled {
   cursor: default;
 }
 .grid-card:disabled:hover {
-  border-color: var(--md-line);
+  border-color: var(--miao-line);
+  transform: none;
+  box-shadow: none;
 }
 .grid-thumb {
   flex: 1;
@@ -921,61 +1971,176 @@
 .grid-foot .is-bad {
   color: var(--md-error);
 }
-.lib-foot-note {
-  font-size: 11px;
-  color: var(--md-muted);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
 
 /* ================================================================ X-D2 原文 / 译文对照 */
 
+/*
+ * 对照页（设计稿 `.compare`）：**整屏覆盖** `position: fixed; inset: 0`。
+ * 底色是页面板底（设计稿 `theme.css:462` 的 `background: var(--bg)`）。
+ *
+ * 🔴 必须 fixed，不能只写 `height: 100%`：它渲染在 `.content` 里，而 `.content`
+ *    有 `padding: 14px 22px 18px` ⇒ 100% 只到 630（窗口 780），上下各留一条 14/18 的缝，
+ *    整屏的对照页看起来像"卡片"而不是"进入了另一屏"。
+ * ⚠️ 本屏祖先目前**没有** `transform`/`filter`（那会把 fixed 的包含块换成祖先，
+ *    见 `units/Modal.tsx` 文件头的同类坑）；若日后给 `.content` 或 `.translate-view`
+ *    加入场动画的 `transform`，这里会立刻退回"只有内容区大小"，届时改回 `100%` 并在
+ *    屏装配件里让 `.content` 去掉内边距。
+ *
+ * 三段：`.compare-head`(58) / `.compare-panes`(1fr) / `.compare-foot`(36)；
+ * 段间不加 gap —— 分隔由两段的 1px 边线表达，再叠 gap 会出现双线夹缝。
+ */
 .compare {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  height: 100%;
-  min-height: 0;
+  gap: 0;
+  background: var(--miao-bg);
 }
+/*
+ * 对照页头部（设计稿 `.cmp-head`）：**平条**不是卡片 —— 58 高 + 一条下分隔线。
+ * 对照页铺满整屏，头部若做成带圆角的卡片，会和左右两个面板的直边打架。
+ */
 .compare-head {
+  flex: 0 0 58px;
+  height: 58px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  gap: 10px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--miao-line);
+  background: var(--miao-surface);
+}
+/* 书名（设计稿 `.cmp-title span`）：小一档、淡一档，与序号同一基线 */
+.compare-book {
+  font-size: 12px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/*
+ * 对照页页脚（设计稿 `.cmp-foot`）：36 高 + 上分隔线，左边键盘、右边提示。
+ * `kbd` 按设计稿的键帽样式（19 宽 / 18 高 / r5 / 底边 2px）—— 它让"这是要按的键"
+ * 一眼可辨，而不是和正文混在一起。
+ */
+.compare-foot {
+  flex: 0 0 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-top: 1px solid var(--miao-line);
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.compare-foot kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 18px;
+  margin: 0 2px;
+  padding: 0 5px;
+  border: 1px solid var(--miao-line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--miao-surface-2);
+  color: var(--miao-muted);
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
 }
 .compare-seq {
-  font-size: 12.5px;
+  font-family: var(--md-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--miao-ink);
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 6px;
 }
+/* 次行（设计稿 `.lb-sub`）：书名 + 页文件名，小一档、淡一档，不与主行抢视线 */
+.compare-seq .muted {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--miao-muted);
+}
+/* 设计稿 `.cmp-panes`：`grid 1fr 1fr` / gap 12 / padding 14px 18px */
 .compare-panes {
   flex: 1;
   min-height: 0;
-  display: flex;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 14px 18px;
 }
 .pane {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  border-radius: var(--md-radius-lg);
+  background: var(--miao-surface);
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
+  box-shadow: var(--miao-shadow-1);
   overflow: hidden;
 }
 .pane-title {
-  height: 34px;
-  flex: 0 0 34px;
+  height: 36px;
+  flex: 0 0 36px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
-  font-size: 11.5px;
-  color: var(--md-ink-2);
-  border-bottom: 1px solid var(--md-line-soft);
+  padding: 0 14px;
+  font-family: var(--md-font-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--miao-text);
+  background: var(--miao-surface-2);
+  border-bottom: 1px solid var(--miao-line);
+}
+/* 来源色点（设计稿 `.cmp-dot`）：6px 圆点，译文侧取主色 */
+.pane-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--miao-faint);
+}
+.pane-dot.is-alt {
+  background: var(--miao-accent);
+}
+/* 页文件名（设计稿 `.cmp-pane-head small`）：小一档、数字字体、不与"原图/译文"抢 */
+.pane-file {
+  font-family: var(--md-font-numeric);
+  font-size: 11px;
+  font-weight: 400;
+}
+/* 取图中 / 缺失的占位文案：比标题小一档 */
+.pane-msg {
+  font-size: 12px;
+}
+/* 未译缺省页：一眼看出"这页还没译"，并给出下一步 */
+.pane-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--miao-muted);
+}
+.pane-empty-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--miao-text);
+}
+.pane-empty-sub {
+  font-size: 11px;
+  color: var(--miao-faint);
 }
 /*
  * 与 `.lightbox-stage` 同理：**必须 flex 居中，不能用 grid + place-items:center**
@@ -990,34 +2155,34 @@
   align-items: center;
   justify-content: center;
   padding: 12px;
-  background: var(--md-surface-2);
+  background: var(--miao-surface-2);
 }
 .pane-body img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
   border-radius: var(--md-radius-xs);
-  box-shadow: 0 6px 18px rgba(59, 51, 82, 0.12);
+  box-shadow: 0 6px 18px rgba(45, 59, 70, 0.12);
   -webkit-user-select: none;
   user-select: none;
 }
-/* 可点全屏的图给"放大镜"光标；标题栏右侧给一句提示，免得功能不被发现 */
+/* 可点全屏的图给"放大镜"光标；标题栏右侧给一句提示，免得功能不被发现。
+   悬停时给一次 1px 抬升 + 一层更实的投影，读作"这张图可以点进去"。 */
 .pane-body img.zoomable {
   cursor: zoom-in;
+  transition: transform var(--miao-dur-base) var(--miao-ease-out);
+}
+.pane-body img.zoomable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px -14px rgba(45, 59, 70, 0.45);
 }
 .pane-zoom {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
-  color: var(--md-muted);
-}
-
-/* 网格分页器（在 lib-foot-note 右侧） */
-.lib-grid-pager {
-  display: inline-flex;
-  gap: 8px;
+  font-size: 11px;
+  color: var(--miao-muted);
 }
 
 /* ================================================================ 全屏看图（对照视图之上） */
@@ -1029,13 +2194,24 @@
   z-index: 70;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  /* 收紧外框：省下的纵向空间全给图（工具栏越矮、图越大） */
-  gap: 8px;
-  padding: 12px;
-  background: rgba(12, 9, 24, 0.88);
+  /* 三段铺满（头 58 / 舞台 1fr / 脚 34），不再"居中一张卡片"式排布 */
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 0;
+  /* 设计稿 `theme.css:470` 的 `.lightbox { background: rgba(14,22,29,.94) }` —— 深底白字 */
+  background: rgba(14, 22, 29, 0.94);
+  color: #e9e7e1;
   cursor: zoom-out;
+  animation: miao-fade-in var(--miao-dur-base) var(--miao-ease-out);
+}
+@keyframes miao-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 /*
  * 舞台必须 **flex 居中**，不能用 `grid + place-items:center`。
@@ -1081,26 +2257,23 @@
 .lightbox-stage img.is-zoomed:active {
   cursor: grabbing;
 }
-/* 工具栏隐藏后的提示带：极窄、不抢画面，但得让人知道还能点回来 */
-.lightbox-hint {
-  flex: 0 0 auto;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.08);
-  user-select: none;
-}
-/* 当前缩放比 + −/+ 按钮：与工具栏同底色，避免读起来像另一个层级 */
+/*
+ * 当前缩放比 + −/+ 按钮（设计稿 `.lb-zoom`：28 高 / padding 0 4 / r8 / 10px；
+ * 按钮 `.lb-zoom-btn`：22×22 / r5 / 13px 图标）。
+ * 深色底上用 14% 白描边，与 `.lb-head` 的分隔线同一族色阶。
+ */
 .lightbox-zoom {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 2px 4px;
-  border-radius: 999px;
-  font-size: 11px;
-  color: var(--md-muted);
-  background: var(--md-line-soft);
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.72);
+  background: transparent;
   /* 控件本身是个复合控件，按钮可点 ⇒ 给默认光标，别让整条都像纯文本 */
   cursor: default;
 }
@@ -1112,76 +2285,125 @@
 .lightbox-zoom-btn {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border: none;
-  border-radius: 50%;
+  border-radius: 5px;
   font-size: 13px;
   line-height: 1;
-  color: var(--md-ink);
+  color: rgba(255, 255, 255, 0.7);
   background: transparent;
   cursor: pointer;
+  transition:
+    background var(--miao-dur-fast) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-spring);
 }
 .lightbox-zoom-btn:hover:not(:disabled) {
-  background: var(--md-line);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.lightbox-zoom-btn:active:not(:disabled) {
+  transform: scale(0.9);
 }
 /* 到顶/到底就禁用：光标随之变默认态，同时 screen reader 读得出"不可用" */
 .lightbox-zoom-btn:disabled {
-  color: var(--md-muted);
+  color: var(--miao-faint);
   opacity: 0.4;
   cursor: default;
 }
 .lightbox-msg {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 12px;
 }
-/* 底部控制条：作"看得清"的底，而不是半透明浮字；压矮压紧，把纵向空间让给图 */
+/* 顶部工具带（设计稿 `.lb-head`：58 高 / 左右 20 / 底部一条 10% 白线）。
+   它是**三段布局的第一段**（头 / 舞台 / 脚），不再是一枚浮在底部的胶囊 ——
+   浮层胶囊会把舞台让出的空间又吃掉一块，且与设计稿的层级不同。 */
 .lightbox-bar {
+  flex: 0 0 58px;
+  height: 58px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
   cursor: default;
+  animation: miao-rise-in var(--miao-dur-base) var(--miao-ease-spring);
+  /* 显隐走淡出（设计稿 `.lightbox .lb-head/.lb-foot { transition: opacity var(--dur-base) }`）：
+     工具栏常驻挂载，只切透明度 —— 点击图片时是"淡走"，不是"啪一下没了" */
+  transition: opacity var(--miao-dur-base) var(--miao-ease-out);
 }
-/* 漫画名过长会把工具栏整条撑宽（看着更"挡"）⇒ 超过 30vw 就省略 */
-.lightbox-bar .compare-seq > span:last-child {
-  max-width: 30vw;
+.lightbox-bar.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+@keyframes miao-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* 深色头带里的次级按钮（设计稿 `.lb-tools .btn-ghost`）：
+   透明底 + 16% 白描边 + 72% 白字 —— 沿用全局 ghost 的浅底会在深色条上变成亮块。 */
+.lightbox-bar .btn-ghost {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.lightbox-bar .btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+/* 标题两行（设计稿 `.lb-title` / `.lb-title small`）：主行是页号与侧别，次行是书名与文件名 */
+.lb-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-right: auto;
+  font-size: 12px;
+  color: #e9e7e1;
+}
+.lb-title small {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.45);
+  max-width: 40vw;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-/* 右上角关闭键 */
-.lightbox-x {
-  position: fixed;
-  top: 16px;
-  right: 18px;
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--md-surface);
-  border: 1px solid var(--md-line);
-  color: var(--md-ink);
+/* 底部窄带（设计稿 `.lb-foot`：34 高）：一行的操作提示 */
+.lightbox-foot {
+  flex: 0 0 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.45);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: default;
+  transition: opacity var(--miao-dur-base) var(--miao-ease-out);
 }
-.lightbox-x:hover {
-  border-color: var(--md-pink);
+.lightbox-foot.is-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* ================================================================ 删除 / 隐藏弹窗的补充行 */
 
 .modal-warn {
   margin-top: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--md-error);
 }
 .modal-hint {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--md-muted);
 }
 .hidden-list {
@@ -1196,132 +2418,536 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 9px;
-  border-radius: var(--md-radius-xs);
-  background: var(--md-surface-2);
+  padding: 7px 10px;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface-2);
 }
 .hidden-name {
   flex: 1;
   min-width: 0;
   font-size: 12px;
-  color: var(--md-ink);
+  color: var(--miao-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ================================================================ X-B1 本机投放 */
+/* ================================================================ X-B1 本机投放
+ *
+ * ver3 版：左列投放区 + 待投放清单，右列「本次投放」表单与落盘规则。
+ * 通用件（`.field` `.field-label` `.field-hint` `.input` `.notice` `.text-btn`）
+ * 已归 `components.scss`，这里只留**本屏私有**的版式（`.pathpreview` 除外 ——
+ * 它同时被漫画库弹窗复用，本质仍是漫画模块的路径呈现件）。
+ */
 
-.drop {
+.drop-scroll {
+  height: 100%;
+  padding: 4px 0 28px;
+  overflow: auto;
+}
+.drop-grid {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.8fr);
+  gap: 14px;
+  align-items: start;
+}
+.drop-col {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 720px;
+  gap: 12px;
+  min-width: 0;
 }
-.dropzone {
-  border: 2px dashed var(--md-line);
-  border-radius: var(--md-radius-lg);
-  background: var(--md-surface);
-  padding: 26px 20px;
+
+/* ── 投放区：拖放热区 ─────────────────────────────────────────────── */
+.drop-zone {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  min-height: 316px;
+  padding: 30px 22px 24px;
+  border: 2px dashed var(--miao-line-strong);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+  text-align: center;
+  cursor: pointer;
+  overflow: hidden;
   transition:
-    border-color 0.15s,
-    background 0.15s;
+    border-color var(--miao-dur-base) ease,
+    background var(--miao-dur-base) ease,
+    transform var(--miao-dur-base) var(--miao-ease-spring);
 }
-.dropzone.is-over {
-  border-color: var(--md-pink);
-  background: var(--md-pink-soft);
+.drop-zone:hover {
+  border-color: var(--miao-primary-line);
+  transform: translateY(-2px);
 }
-.dropzone-title {
+.drop-zone.is-drag {
+  border-color: var(--miao-primary);
+  border-style: solid;
+  background: var(--miao-primary-soft);
+}
+/* 设计稿 `.drop-orb`：64×64 / r20 / 轻微逆时针旋转 / 右下角一块硬投影（accent-soft）。
+   旋转与硬投影是这一块"手工感"的来源 —— 少了它们就是一枚普通的圆角图标底。 */
+.drop-orb {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--miao-primary-line);
+  border-radius: 20px;
+  background: var(--miao-primary-soft);
+  color: var(--miao-primary-ink);
+  transform: rotate(-3deg);
+  box-shadow: 6px 6px 0 var(--miao-accent-soft);
+  transition: transform var(--miao-dur-base) var(--miao-ease-spring);
+  /*
+   * 常驻呼吸浮动（2026-10-25 用户要求）：静止时的 `.drop-orb` 完全不动，
+   * 而它正是"把文件拖进来"这件事的唯一视觉落点 —— 不动的话那一屏看着像张静态图。
+   *
+   * 🔴 关键帧里**必须带上 rotate(-3deg)**：`animation` 播放期间会覆盖 `transform`，
+   *    只写 `translateY` 会让球在每一拍把倾斜角归零 ⇒ 看着"抽一下"。
+   */
+  animation: drop-orb-float 3.2s ease-in-out infinite;
+}
+@keyframes drop-orb-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(-3deg);
+  }
+}
+/*
+ * 拖入态：**停掉**浮动动画，让下面的 transform + transition 接管。
+ * 不这样的话动画会持续覆盖 transform，拖入瞬间那三合一动作（抬升/放大/倾斜）根本不生效。
+ */
+.drop-zone.is-drag .drop-orb {
+  animation: none;
+  transform: translateY(-4px) scale(1.06) rotate(-3deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .drop-orb {
+    animation: none;
+  }
+}
+.drop-halftone {
+  position: absolute;
+  right: 24px;
+  top: 20px;
+  width: 110px;
+  height: 72px;
+  color: var(--miao-line-strong);
+  opacity: 0.5;
+  background-image: radial-gradient(currentColor 1px, transparent 1.2px);
+  background-size: 7px 7px;
+  pointer-events: none;
+}
+.drop-zone h2 {
   font-family: var(--md-font-display);
+  font-size: 19px;
   font-weight: 700;
-  font-size: 13.5px;
-  margin-top: 8px;
+  letter-spacing: 0.005em;
+  color: var(--miao-ink);
 }
-.dropzone-sub {
-  font-size: 11.5px;
-  color: var(--md-muted);
+.drop-sub {
+  max-width: 380px;
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--miao-muted);
+}
+.drop-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+.drop-tips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 18px;
+  font-size: 10px;
+  color: var(--miao-faint);
+}
+.drop-tips span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.field {
+/* ── 待投放清单 ───────────────────────────────────────────────────── */
+.drop-queue {
+  padding: 14px 16px 12px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+  /* 清单出现时自下而上升起（设计稿 `.drop-queue { animation: rise-in … }`）：
+     投放完一批后这块是"刚长出来的"，直接闪现会让人以为页面跳了一下 */
+  animation: miao-rise-in var(--miao-dur-base) var(--miao-ease-out);
+}
+/* 设计稿 .drop-queue-head：左右两端对齐，不画下边框 ——
+   卡片自己已有描边，再加一条会把"标题行"与"文件网格"切成两块。 */
+.drop-queue-head {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
 }
-.field-label {
-  font-size: 11.5px;
-  color: var(--md-ink-2);
+.drop-queue-head h3 {
+  margin: 0;
+  font-family: var(--md-font-display);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
 }
-.field-hint {
-  font-size: 10.5px;
-  color: var(--md-muted);
-}
-.input {
-  height: 34px;
-  padding: 0 11px;
-  border-radius: var(--md-radius-sm);
-  border: 1px solid var(--md-line);
-  background: var(--md-surface);
-  color: var(--md-ink);
-  outline: none;
+/* 设计稿 .drop-files：网格（每格至少 156px），不是纵向列表 ——
+   一批 20 张图排成两列网格，一眼看得出"这批有多少"；纵向列表要滚三屏。 */
+.drop-files {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  gap: 8px;
+  max-height: 230px;
+  overflow: auto;
+  padding-right: 2px;
   -webkit-user-select: text;
   user-select: text;
 }
-.input:focus {
-  border-color: var(--md-pink);
+/* 设计稿 .drop-file：每一格是一张**小卡**（浅底 + 描边），不是裸行 */
+.drop-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--miao-line);
+  border-radius: 10px;
+  background: var(--miao-surface-2);
+  transition: border-color var(--miao-dur-fast) ease;
+}
+.drop-file:hover {
+  background: var(--miao-surface-2);
+}
+.drop-file-thumb {
+  width: 34px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--miao-line);
+  border-radius: 7px;
+  background: var(--miao-surface-2);
+  color: var(--miao-muted);
+  flex: none;
+}
+.drop-file-meta {
+  min-width: 0;
+  flex: 1;
+}
+.drop-file-meta strong {
+  display: block;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--miao-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drop-file-meta small {
+  display: flex;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--miao-faint);
+}
+.drop-file-remove {
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--miao-faint);
+  flex: none;
+  transition:
+    background var(--miao-dur-fast) ease,
+    color var(--miao-dur-fast) ease;
+}
+.drop-file-remove:hover {
+  background: var(--miao-danger-soft);
+  color: var(--miao-danger);
 }
 
-.pathpreview {
-  font-family: var(--md-font-numeric);
+/* ── 右列：表单卡与规则卡 ─────────────────────────────────────────── */
+.form-card {
+  padding: 18px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+}
+.form-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--md-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.form-card .form-sub {
+  margin: 3px 0 12px;
   font-size: 11px;
-  color: var(--md-ink-2);
-  background: var(--md-surface-2);
-  border: 1px solid var(--md-line-soft);
-  border-radius: var(--md-radius-sm);
+  line-height: 1.6;
+  color: var(--miao-muted);
+}
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px;
+}
+.form-field:first-of-type {
+  margin-top: 0;
+}
+.drop-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--miao-line);
+  border-radius: 10px;
+  background: var(--miao-surface-2);
+}
+.drop-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--miao-muted);
+}
+.drop-meta-row b {
+  min-width: 0;
+  font-weight: 600;
+  color: var(--miao-text);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pathinline {
+  font-family: var(--md-font-numeric);
+  font-size: 10px;
+}
+.drop-submit {
+  display: flex;
+  gap: 7px;
+  margin-top: 12px;
+}
+.drop-submit .btn-primary {
+  flex: 1;
+}
+
+/* ── 右栏两张卡（设计稿 `.drop-form`）───────────────────────────────── */
+.drop-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+/* 必填星号：设计稿把它染成 danger，与 hint 的错误态同色系 */
+.field-req {
+  color: var(--miao-danger);
+}
+
+/*
+ * ── 最近投放（设计稿 `.recent-drop` / `.recent-bar`）─────────────────
+ *
+ * 与 `.drop-flow` 同为左列的一张卡，但标题在卡外（`.section-head`）：
+ * 设计稿把「最近投放」当作一个**区块标题 + 一条横向摘要条**，而不是一张有头的卡。
+ */
+.recent-drop {
+  margin-top: 18px;
+}
+.section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+.section-head h2 {
+  font-family: var(--md-font-display);
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+/* 区块标题右侧的文字动作（查看队列）：纯文字 + 箭头，悬停才变色 */
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--miao-muted);
+  transition: color var(--miao-dur-fast) ease;
+}
+.link-btn:hover {
+  color: var(--miao-primary-ink);
+}
+.recent-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface);
+}
+.recent-bar .btn {
+  margin-left: auto;
+}
+/* 空态：同一条形，但不摆瓦片、不给「再次投放」（没有可重复的对象） */
+.recent-bar.is-empty {
+  border-style: dashed;
+}
+.recent-thumbs {
+  display: flex;
+}
+/* 瓦片：26×34、相邻 -7px 叠压、2px 表面色描边 —— 叠压是"多组图片"的视觉暗示 */
+.recent-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 34px;
+  margin-left: -7px;
+  border: 2px solid var(--miao-surface);
+  border-radius: 4px;
+  font-size: 10px;
+  color: color-mix(in srgb, #fff 90%, transparent);
+}
+.recent-thumb:first-child {
+  margin-left: 0;
+}
+.recent-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.recent-text strong {
+  font-size: 12px;
+  color: var(--miao-ink);
+}
+.recent-text small {
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.batch-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 9px 0 0;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--miao-muted);
+}
+/*
+ * 「投放之后会发生什么」（设计稿 `.drop-flow`）：外层是一张卡，内里三列步骤。
+ * 外层卡不能省 —— 没有它，三个灰底小块会直接浮在页面底色上，读成"三段散落的说明"。
+ */
+.drop-flow {
+  margin-top: 18px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+}
+.drop-flow-head {
+  margin-bottom: 10px;
+}
+.drop-flow-head h2 {
+  margin-top: 2px;
+  font-family: var(--md-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--miao-ink);
+}
+.drop-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.drop-flow-step {
+  padding: 11px 12px;
+  border: 1px solid var(--miao-line);
+  border-radius: 11px;
+  background: var(--miao-surface-2);
+}
+.drop-flow-step > span {
+  font-family: var(--miao-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--miao-accent);
+}
+.drop-flow-step strong {
+  display: block;
+  margin: 4px 0 3px;
+  font-size: 12px;
+  color: var(--miao-ink);
+}
+.drop-flow-step p {
+  margin: 0;
+  font-size: 9.5px;
+  line-height: 1.65;
+  color: var(--miao-muted);
+}
+
+/* 落盘路径：投前方与投后回执共用（漫画库弹窗也复用本件） */
+.pathpreview {
   padding: 9px 11px;
+  border: 1px solid var(--miao-line);
+  border-radius: 12px;
+  background: var(--miao-surface-2);
+  font-family: var(--miao-font-mono);
+  font-size: 11px;
+  color: var(--miao-text);
   word-break: break-all;
   -webkit-user-select: text;
   user-select: text;
 }
-
-.filelist {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 190px;
-  overflow: auto;
-  -webkit-user-select: text;
-  user-select: text;
+.notice .pathpreview {
+  margin-top: 6px;
+  background: var(--miao-surface);
 }
-.filelist-row {
+/* 投放成功后的回执块（`Notice kind="ok"` + 本类）：它跟在投放区后面，需要与上方拉开一档
+   —— 之前只有类名没有规则，这条成功回执与投放区贴在一起，看不出是"刚发生的下一步"。 */
+.drop-notice {
+  margin-top: 14px;
+}
+.notice-acts {
   display: flex;
-  align-items: center;
   gap: 8px;
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: var(--md-radius-xs);
-  background: var(--md-surface-2);
-}
-.filelist-row span:last-child {
-  margin-left: auto;
-  color: var(--md-muted);
-}
-
-.notice {
-  font-size: 11.5px;
-  padding: 9px 11px;
-  border-radius: var(--md-radius-sm);
-  border: 1px solid var(--md-line);
-  background: var(--md-surface-2);
-  color: var(--md-ink-2);
-}
-.notice.is-bad {
-  border-color: var(--md-error);
-  color: var(--md-error);
-  background: var(--md-surface);
+  margin-top: 8px;
 }
 
 /* ================================================================ 漫画库 · 本 → 话 → 页（ver2.2）
@@ -1334,12 +2960,8 @@
  * 这里**只**新增两处尺寸常量 —— 封面缩略 32×44 与详情头封面 56×76（设计稿 §7.1 / §7.3）。
  */
 
-/* ── 左栏列表项改造：封面缩略 + 名称 + 「作者 · N 话 · M 页」 ───────────── */
-.lib-item {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
+/* ── 左栏列表项的文本列（封面缩略 + 名称 + 「作者 · N 话 · M 页」）─────── */
+/* 行式骨架已并回上方 `.lib-item`（本文件内该选择器只允许一处定义） */
 .lib-item-text {
   flex: 1;
   min-width: 0;
@@ -1347,13 +2969,20 @@
   flex-direction: column;
   gap: 2px;
 }
+/*
+ * 书架缩略图（设计稿 `theme.css:410` 的 `.book-thumb`：38×50 / r7）。
+ * ⚠️ 真实尺寸由 `LIBRARY.cover.thumb` 以**行内样式**注入（`CoverThumb` 的 w/h/radius），
+ *    本块的 width/height 只是无 JS 时的兜底 —— 改这里不会改变实际渲染。
+ */
 .cover-thumb {
-  flex: 0 0 auto;
-  width: 32px;
-  height: 44px;
-  border-radius: var(--md-radius-xs);
-  background: var(--md-line-soft);
-  object-fit: cover;
+  flex: none;
+  width: 38px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: var(--miao-surface-2);
   overflow: hidden;
 }
 .cover-thumb.is-ph {
@@ -1362,104 +2991,44 @@
   justify-content: center;
   font-family: var(--md-font-display);
   font-size: 13px;
-  color: var(--md-muted);
+  font-weight: 700;
+  /* 无缩略图时的占位按设计稿 `.book-thumb` 处理：主色→杏奶的 145° 渐变 + 白字 + 投影。
+     字形取书名首字（真值），不是"示例封面"—— 缺图时它仍然能区分是哪一本 */
+  color: rgba(255, 255, 255, 0.94);
+  background: linear-gradient(145deg, var(--miao-primary), var(--miao-accent));
+  box-shadow: 0 3px 8px -4px color-mix(in srgb, var(--miao-ink) 40%, transparent);
+  position: relative;
+}
+/* 斜向高光（设计稿 `.book-thumb::after`）：让平面渐变读成"有厚度的一小块封面" */
+.cover-thumb.is-ph::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 40%);
+  pointer-events: none;
 }
 
-/* ── 屏 A′：搜索结果分组态 ──────────────────────────────────────────── */
-.grp {
-  margin-bottom: 4px;
-}
-.grp-head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: var(--md-radius-xs);
-  font-size: 11.5px;
-  color: var(--md-ink-2);
-}
-.grp-head:hover {
-  background: var(--md-surface-2);
-}
-.grp-caret {
-  flex: 0 0 auto;
-  color: var(--md-muted);
-  transition: transform 0.12s ease;
-}
-.grp-caret.is-folded {
-  transform: rotate(-90deg);
-}
-.grp-title {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.grp-count {
-  flex: 0 0 auto;
-  font-size: 10.5px;
-  color: var(--md-muted);
-}
-.grp-body {
-  padding: 0 0 4px 6px;
-}
-.grp-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.grp-row-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  /* 靠左排：「第 1 话 · 已译完」是一句话，不是左右对齐的两栏（设计稿 §7.2 的行样式） */
-  justify-content: flex-start;
-  gap: 4px;
-  text-align: left;
-  padding: 5px 7px;
-  border-radius: var(--md-radius-xs);
-  font-size: 11.5px;
-}
-.grp-row-main:hover {
-  background: var(--md-surface-2);
-}
-.grp-row-main.is-active {
-  background: var(--md-pink-soft);
-}
-.grp-row-label {
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.grp-row-status {
-  flex: 0 0 auto;
-  font-size: 10.5px;
-}
-.grp-row-act {
-  flex: 0 0 auto;
-}
-/* 命中片段（设计稿 §7.2「匹配片段加 is-hit」）—— 只换文字色，不动行结构 */
+/* 命中片段（§7.2「匹配片段加 is-hit」）—— 只换文字色，不动行结构 */
 .grp-hit {
-  color: var(--md-pink);
+  color: var(--miao-accent);
+  font-weight: 700;
 }
 .other-hint {
-  padding: 4px 8px 6px;
+  padding: 4px 8px 6px 22px;
   font-size: 11px;
-  line-height: 1.5;
-  color: var(--md-muted);
+  line-height: 1.6;
+  color: var(--miao-muted);
 }
 
-/* ── 弹窗里的封面区（设计稿 §7.6.2）──────────────────────────────── */
+/* ── 弹窗里的封面区（§7.6.2）────────────────────────────────────────── */
 .modal-label {
   margin-top: 10px;
   margin-bottom: 6px;
+  font-family: var(--md-font-display);
   font-size: 11px;
-  color: var(--md-ink-2);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--miao-muted);
 }
 .modal-label:first-child {
   margin-top: 0;
@@ -1473,12 +3042,14 @@
   flex: 0 0 auto;
   width: 96px;
   height: 128px;
-  border-radius: var(--md-radius-sm);
-  border: 1px solid var(--md-line);
-  background: var(--md-line-soft);
+  border-radius: 12px;
+  border: 1px solid var(--miao-line);
+  background: var(--miao-surface-2);
+  box-shadow: 0 10px 22px -16px rgba(45, 59, 70, 0.45);
   overflow: hidden;
 }
-.cover-preview img {
+.cover-preview img,
+.cover-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -1491,8 +3062,9 @@
   justify-content: center;
   padding: 4px;
   text-align: center;
-  font-size: 10.5px;
-  color: var(--md-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--miao-muted);
   word-break: break-all;
 }
 .cover-acts {
@@ -1511,42 +3083,734 @@
 /* ── 头部卡的补充信息（屏 B/C）────────────────────────────────────────── */
 /* 大类：作者 · N 话 · M 页（§7.1 同一口径）；话内：《书名》归因 */
 .lib-head-sub {
-  font-size: 11px;
-  color: var(--md-muted);
+  font-size: 12px;
+  color: var(--miao-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ── 屏 B：话列表（设计稿 §7.3）──────────────────────────────────────── */
-/* 话卡容器：本体是 .grid-card（同几何，不另写一份），容器只为角标与悬浮菜单提供定位 */
+/* ── 屏 B：话列表（§7.3）────────────────────────────────────────────── */
+/*
+ * 话卡（设计稿 `styles.css:1135-1167` + `theme.css:429-442` 的生效值）：
+ * **封面 + 正文三段**，不是纯文字卡。
+ *
+ * 🔴 封面用**整本封面**（服务端没有逐话封面）：`manifest.cover` 可在「编辑信息」里配，
+ *    没配就画虚线占位（`.cc-cover.is-empty`）—— 不给"看起来像有封面"的灰块。
+ */
 .chapter-card {
   position: relative;
-  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--miao-line);
+  border-radius: 14px;
+  background: var(--miao-surface);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition:
+    border-color var(--miao-dur-fast) ease,
+    box-shadow var(--miao-dur-base) ease,
+    transform var(--miao-dur-fast) var(--miao-ease-out);
 }
-/* 右上角「第 N 话」角标：不挡卡片点击（Badge 是展示件，不可交互） */
-.chapter-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  pointer-events: none;
+.chapter-card:hover {
+  border-color: var(--miao-primary-line);
+  transform: translateY(-3px);
+  box-shadow: 0 14px 26px -24px rgba(45, 59, 70, 0.45);
 }
-/* 左上角悬浮菜单：悬停 / 键盘聚焦时浮现（触屏无 hover，桌面端以鼠标为主） */
-.chapter-menu {
+/* 状态描边（设计稿 `.is-done` / `.is-partial`）：只换边色，不换底色 */
+.chapter-card.is-done {
+  border-color: color-mix(in srgb, var(--miao-success) 26%, var(--miao-line));
+}
+.chapter-card.is-pending {
+  border-color: color-mix(in srgb, var(--miao-warning) 26%, var(--miao-line));
+}
+.chapter-card.is-missing {
+  border-style: dashed;
+  opacity: 0.84;
+}
+/* 封面（设计稿 `.cc-cover`：4/5 比例 / center-top / surface-3 底） */
+.cc-cover {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  background-color: var(--miao-surface-3);
+  background-size: cover;
+  background-position: center top;
+  box-shadow: inset 0 0 0 1px rgba(45, 59, 70, 0.04);
+}
+/* 没配封面：虚线占位，明确"这里本来可以有一张图" */
+.cc-cover.is-empty {
+  border-bottom: 1px dashed var(--miao-line-strong);
+}
+/* 状态徽标（设计稿 `.cc-status`：左上 5/5，最大宽度留出右上菜单的位置） */
+.cc-status {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  left: 5px;
+  top: 5px;
+  max-width: calc(100% - 40px);
+  height: 18px;
+  font-size: 8.5px;
+  box-shadow: 0 3px 10px -7px rgba(45, 59, 70, 0.5);
+}
+.cc-main {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.cc-main:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+/* 正文三段（设计稿 `.cc-body`：gap 3 / padding 7 8 8 / 顶部一条线 / 白面） */
+.cc-body {
+  display: grid;
+  gap: 3px;
+  padding: 7px 8px 8px;
+  border-top: 1px solid var(--miao-line);
+  background: var(--miao-surface);
+}
+.cc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  min-width: 0;
+}
+.cc-row strong {
+  font-size: 10.5px;
+  color: var(--miao-ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cc-row > span {
+  font-size: 8.5px;
+  color: var(--miao-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* 次行（设计稿 `.cc-row-meta`）：更新于 / 缺 N 页，再小一档、再淡一档 */
+.cc-row-meta {
+  font-size: 7.5px;
+  color: var(--miao-faint);
+}
+.cc-missing {
+  color: var(--miao-danger);
+  font-weight: 700;
+}
+.cc-bar {
+  height: 4px;
+  margin-top: 3px;
+  border-radius: 99px;
+  background: var(--miao-surface-3);
+  overflow: hidden;
+}
+.cc-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--miao-primary);
+}
+/*
+ * 进度条按状态换色（设计稿 `.is-done` → success / `.is-partial` → accent）。
+ * 本仓的状态比设计稿细一档（pending 与 missing 分开），两者都是"没译完" ⇒ 同取 accent；
+ * 颜色只做辅助，状态词在 `.cc-status` 里始终有文字（颜色不是唯一信息载体）。
+ */
+.chapter-card.is-done .cc-bar i {
+  background: var(--miao-success);
+}
+.chapter-card.is-pending .cc-bar i,
+.chapter-card.is-missing .cc-bar i {
+  background: var(--miao-accent);
+}
+/* 右上角操作菜单（设计稿 `.cc-menu`：right 5 / top 5）：悬停才浮现，不占正文宽度 */
+.cc-menu {
+  position: absolute;
+  top: 5px;
+  right: 5px;
   opacity: 0;
-  transition: opacity 120ms ease;
+  pointer-events: none;
+  transition: opacity var(--miao-dur-fast) ease;
 }
-.chapter-card:hover .chapter-menu,
-.chapter-menu:focus-within {
+.chapter-card:hover .cc-menu,
+.cc-menu:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 /* 脚注右侧的状态点 + 文字：颜色只是辅助，文字与点同现（《02》§5.2 色不作唯一载体） */
-.chapter-state {
+
+/* ============================================================
+ * 引擎下载页（`.engine-download-page` / `.ed-*`）—— 对齐设计稿 `.engine-download` 一屏
+ *
+ * 设计稿那一屏是覆盖层（`position: fixed; inset: 0; z-index: --z-engine`），产品走**路由页**
+ * 装在 `.content` 里（返回要走浏览器历史，且这页要能深链）。所以：
+ *  · 页头从"通栏 + 下边线"改成与下方同族的**卡片条**（同一个 r-xl / 描边 / 阴影语言）；
+ *  · `.ed-scroll` 不再自己滚（外层 `.content` 已经滚），只负责竖排与间距；
+ *  · 其余数值（栅格列宽、环 170、内边距、圆角、字号阶梯、色位）逐条照设计稿搬。
+ * ⚠️ 本片保持平铺写法：检查脚本用 `[^}]*` 取块，嵌套会改块结构让判据失效。
+ * ============================================================ */
+/*
+ * 下载页 = **满高滚动容器**，内容居中盒是它内部的 `.ed-wrap`。
+ *
+ * 🔴 别把它写成 `max-width + margin:auto` 的居中盒：`.content` 是 `overflow: hidden`
+ *    （滚动权归各屏，见 app.scss），一个没有高度约束的居中盒既撑不出滚动区、
+ *    又会被父级裁掉 ⇒ 内容超一屏就**滚不动**，而且滚动条会落在 980 的盒子里而不是窗口右缘。
+ *    与 `.notready` / `.drop-scroll` 同一套写法：外层滚动、内层 `max-width` 居中。
+ */
+.engine-download-page {
+  height: 100%;
+  overflow-y: auto;
+  padding: 4px 0 28px;
+}
+.ed-wrap {
+  max-width: 980px;
+  margin: 0 auto;
+}
+.ed-head {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 22px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+}
+.ed-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.ed-head .modal-kicker {
+  margin-bottom: 1px;
+}
+.ed-head-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ed-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+  min-height: 0;
+}
+/* 主卡：左环右文案；右上角那一团淡色是设计稿的装饰弧（`.ed-hero::after`） */
+.ed-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 30px;
+  align-items: center;
+  padding: 22px 26px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+}
+.ed-hero::after {
+  content: '';
+  position: absolute;
+  right: -60px;
+  top: -90px;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: var(--miao-accent-soft);
+  opacity: 0.7;
+  pointer-events: none;
+}
+.ed-ring-wrap {
+  position: relative;
+  width: 170px;
+  height: 170px;
+  justify-self: center;
+}
+.ed-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.ed-ring-center strong {
+  font-size: 28px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.ed-ring-center span {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--miao-muted);
+}
+.ed-hero-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+.ed-eyebrow {
+  margin: 0 0 5px;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--miao-muted);
+}
+/* 产品自加的一行：两轮指示（设计稿没有，但 stage1/stage2 是真状态） */
+.ed-round {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--miao-primary-ink);
+}
+.ed-hero-copy h3 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.3;
+}
+.ed-hero-copy > p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--miao-muted);
+}
+.ed-metrics {
+  display: grid;
+  /* 三格（已下载已去掉）：总大小 / 速度 / 剩余 */
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+  max-width: 460px;
+}
+.ed-metrics div {
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--miao-line);
+  background: var(--miao-surface-2);
+}
+.ed-metrics span {
+  font-size: 8.5px;
+  color: var(--miao-muted);
+}
+/*
+ * 标签行：文字 + 可选的 `?` 气泡图标（同一行，图标跟在文字后面）。
+ * 用 flex 而不是 inline：`span` 在 `.ed-metrics` 里是 `display:block`（见上），
+ * 图标要贴在同一行就得让这一格自己成为 flex 容器。
+ */
+.ed-metric-label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.ed-metric-hint {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid var(--miao-line-strong);
+  font-size: 7.5px;
+  line-height: 1;
+  color: var(--miao-faint);
+  cursor: help;
+  /* 反色：浅底上要看得见，但不能比读数还显眼 */
+  background: var(--miao-surface);
+}
+.ed-metrics strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--miao-ink);
+  font-variant-numeric: tabular-nums;
+}
+.ed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+.ed-foot-note {
+  margin: 10px 0 0;
+  font-size: 9.5px;
+  color: var(--miao-faint);
+}
+
+/* ── 下载前检查（设计稿 `.ed-preflight`）：只在等待开始时出现 ── */
+.ed-preflight {
+  padding: 15px 20px 16px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+}
+.ed-preflight-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.ed-preflight-head h3 {
+  margin: 2px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--miao-ink);
+}
+.ed-preflight-head p {
+  margin: 2px 0 0;
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--miao-muted);
+}
+.ed-preflight-grid {
+  display: grid;
+  grid-template-columns: 0.72fr 1.55fr 0.72fr 0.72fr;
+  gap: 8px;
+}
+.ed-check {
+  padding: 9px 11px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-sm);
+  background: var(--miao-surface-2);
   min-width: 0;
+}
+.ed-check > span {
+  display: block;
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.ed-check strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--miao-ink);
+  font-variant-numeric: tabular-nums;
+}
+.ed-check small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--miao-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ed-check small svg {
+  flex: none;
+  width: 11px;
+  height: 11px;
+}
+/* 就绪/缺失两态只换图标与文案色，底色不动 —— 四格并排时四块底色不同会读成四张卡 */
+.ed-check.is-ok small svg {
+  color: var(--miao-success);
+}
+.ed-check.is-bad small {
+  color: var(--miao-danger);
+}
+.ed-check.is-bad small svg {
+  color: var(--miao-danger);
+}
+.ed-check-dir .ed-path {
+  font-family: var(--miao-font-mono);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ed-check-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.ed-preflight-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 9px;
+  font-size: 9px;
+  color: var(--miao-faint);
+}
+.ed-preflight-note svg {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  color: var(--miao-primary);
+}
+
+/* 五段进度条（设计稿 `.ed-steps`）：一条横线串五个节点，状态只写在 data-state 上 */
+.ed-timeline {
+  padding: 18px 22px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-xl);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+}
+.ed-timeline-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.ed-timeline-head h3 {
+  margin: 0;
+  font-size: 12.5px;
+}
+.ed-timeline-head span {
+  font-size: 9.5px;
+  color: var(--miao-muted);
+}
+.ed-steps {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ed-step {
+  position: relative;
+  padding-top: 26px;
+  text-align: center;
+}
+.ed-step::before {
+  content: '';
+  position: absolute;
+  top: 9px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--miao-line);
+}
+.ed-step:first-child::before {
+  left: 50%;
+}
+.ed-step:last-child::before {
+  right: 50%;
+}
+.ed-step-node {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid var(--miao-line-strong);
+  background: var(--miao-surface);
+  z-index: 1;
+}
+.ed-step strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--miao-text);
+}
+.ed-step small {
+  display: block;
+  margin-top: 2px;
+  font-size: 8.5px;
+  color: var(--miao-faint);
+}
+.ed-step[data-state='done'] .ed-step-node {
+  background: var(--miao-success);
+  border-color: var(--miao-success);
+}
+.ed-step[data-state='done'] .ed-step-node::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+}
+.ed-step[data-state='active'] .ed-step-node {
+  background: var(--miao-primary);
+  border-color: var(--miao-primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--miao-primary) 18%, transparent);
+  /*
+   * 进行中的节点**呼吸闪烁**：静止的实心点与"已完成"只差一个颜色，扫一眼分不出
+   * "这段在跑"和"这段跑完了"。动画只在 `active` 上，`done` 保持完全静止。
+   * 🔴 `prefers-reduced-motion` 下关掉（下方媒体查询）—— 前庭敏感用户不该被迫看它闪。
+   */
+  animation: ed-step-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ed-step-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--miao-primary) 18%, transparent);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--miao-primary) 4%, transparent);
+    opacity: 0.72;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ed-step[data-state='active'] .ed-step-node {
+    animation: none;
+  }
+}
+.ed-step[data-state='active'] strong {
+  color: var(--miao-ink);
+}
+.ed-step[data-state='failed'] .ed-step-node {
+  background: var(--miao-danger);
+  border-color: var(--miao-danger);
+}
+.ed-step[data-state='failed'] strong {
+  color: var(--miao-danger);
+}
+/* 产品的「已暂停」不并入红色失败：中断可续传，画成失败会让人以为要重下 */
+.ed-step[data-state='paused'] .ed-step-node {
+  background: var(--miao-warning);
+  border-color: var(--miao-warning);
+}
+.ed-step[data-state='paused'] strong {
+  color: var(--miao-text);
+}
+/* 当前文件 + 细条 + 日志 */
+.ed-detail {
+  padding: 16px 22px 18px;
+  border: 1px solid var(--miao-line);
+  border-radius: var(--miao-r-lg);
+  background: var(--miao-surface);
+  box-shadow: var(--miao-shadow-1);
+}
+.ed-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.ed-detail-head h3 {
+  margin: 0;
+  font-size: 12px;
+}
+.ed-detail-head span {
+  margin-left: auto;
+  font-family: var(--miao-font-mono);
+  font-size: 10px;
+  color: var(--miao-muted);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+/*
+ * 当前文件行：**固定两行**，超出省略号，全名走 `title`。
+ *
+ * 🔴 为什么必须限行：文件 id / 路径可能很长（HF 的 blobs 是 64 位十六进制），
+ *    不限制会把这一行撑到十几行，把下面的细条与日志顶出视口。
+ *    `overflow-wrap: anywhere` 保留（长哈希没有断点，不拆会横向溢出）。
+ */
+.ed-detail-current {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  min-width: 0;
+}
+/* `.ed-bar`（当前文件下方的细条）已按用户要求移除（2026-10-25）：
+   它和环是**同一个数**（整体装配进度）的两次表达，屏幕上同时有环、有细条、
+   还有五段节点 —— 三处说同一件事，反而让人不知道哪个才是"真进度"。 */
+/* 日志块已抽成通用单元 `.log-block`（两处日志共用，带悬停浮现的复制按钮）——
+   下载页那一处用 `is-tall` 档（最大高度 220）。此处的旧规则随之退役。 */
+/*
+ * 下载页的窄窗两档（设计稿 @media (max-width: 900px) / (max-width: 680px)）：
+ * ≤900 主卡转单列居中（环在上、文案在下），五段条只留段名；
+ * ≤680 段条改成**竖排列表**（节点靠左、状态小字回来）—— 横排五格在 680 以下每格只有
+ * 一百来 px，段名会被挤成两行，而竖排读得完。
+ * ⚠️ 设计稿 ≤680 那条 .ed-scroll 的 padding **没有搬**：那一屏自己是滚动容器，
+ *    产品的这一页装在 .content 里（内缩与滚动都归外壳），搬过来会变成双层内边距。
+ */
+@media (max-width: 900px) {
+  .ed-hero {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+  .ed-hero-copy > p {
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .ed-metrics {
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .ed-actions {
+    justify-content: center;
+  }
+  .ed-step strong {
+    font-size: 10px;
+  }
+  .ed-step small {
+    display: none;
+  }
+  .ed-preflight-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 680px) {
+  .ed-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ed-steps {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .ed-step {
+    padding: 6px 0 6px 28px;
+    text-align: left;
+  }
+  .ed-step::before {
+    display: none;
+  }
+  .ed-step-node {
+    top: 8px;
+    left: 4px;
+    transform: none;
+  }
+  /* 竖排之后状态小字重新有意义（每段自己一行，不再和邻段抢宽度） */
+  .ed-step small {
+    display: block;
+  }
+  .ed-preflight-grid {
+    grid-template-columns: 1fr;
+  }
+  .ed-preflight-head {
+    flex-direction: column;
+  }
+}
+
+/* 表头里的筛选触发器：收起时看起来就是表头文字，悬停才有按钮感 */
+.qt-head .qt-c-source .btn,
+.qt-head .qt-c-status .btn {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--miao-faint);
+}
+.qt-head .qt-c-source .btn:hover,
+.qt-head .qt-c-status .btn:hover {
+  color: var(--miao-text);
+  background: var(--miao-surface-3);
+}
+.qt-filter-menu {
+  min-width: 150px;
 }

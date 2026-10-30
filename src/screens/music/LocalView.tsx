@@ -1,12 +1,8 @@
-import { open } from '@tauri-apps/plugin-dialog';
-import { FolderOpen, FolderPlus, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useMusicStore } from '@music/store';
 import { songKey } from '@music/convert';
 import { Empty, IconButton, VirtualList } from '@components/units';
 import { SongRow } from '@screens/music/shared';
-
-/** 与 Rust 侧解析器支持的扩展名保持一致（多列无害，选不中会被后端忽略） */
-const AUDIO_EXT = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'opus', 'wma', 'aiff', 'ape'];
 
 /**
  * 本地曲库视图。
@@ -17,49 +13,25 @@ export function LocalView() {
   const localSongs = useMusicStore((s) => s.localSongs);
   const localQueue = useMusicStore((s) => s.localQueue);
   const importing = useMusicStore((s) => s.importingLocal);
-  const importLocal = useMusicStore((s) => s.importLocal);
-  const importFolder = useMusicStore((s) => s.importFolder);
   const removeLocalSong = useMusicStore((s) => s.removeLocalSong);
-  const clearLocalSongs = useMusicStore((s) => s.clearLocalSongs);
   const playPlaylist = useMusicStore((s) => s.playPlaylist);
   const currentSong = useMusicStore((s) => s.currentSong);
 
-  const pickFiles = async () => {
-    const picked = await open({
-      multiple: true,
-      directory: false,
-      filters: [{ name: '音频', extensions: AUDIO_EXT }],
-    });
-    if (Array.isArray(picked) && picked.length > 0) await importLocal(picked);
-  };
-
-  const pickFolder = async () => {
-    const picked = await open({ multiple: false, directory: true });
-    if (typeof picked === 'string') await importFolder(picked);
-  };
-
   return (
     <div className="music-body">
-      <div className="music-card-hd">
-        <span className="music-card-sub">{localSongs.length} 首</span>
-        <div className="grow" />
-        <button type="button" className="music-btn pri" disabled={importing} onClick={() => void pickFiles()}>
-          <FolderOpen size={12} /> 选择文件
-        </button>
-        <button type="button" className="music-btn out" disabled={importing} onClick={() => void pickFolder()}>
-          <FolderPlus size={12} /> 选择文件夹
-        </button>
-        {localSongs.length > 0 ? (
-          <button type="button" className="music-btn out" onClick={clearLocalSongs}>
-            <Trash2 size={12} /> 清空
-          </button>
-        ) : null}
-      </div>
+      {/*
+       * 组头（设计稿 `.ms-caption`）：**只有小节名，没有按钮**。
+       *
+       * 设计稿的 `.ms-caption` 就是一行小标签。导入动作在右侧「本地音乐」视图里
+       * （`LocalPanel` 的「选择文件 / 选择文件夹」），左栏这一组只是导航 ——
+       * 两处都放导入按钮，等于同一个动作有两个入口，且左栏这一组会被按钮挤窄。
+       */}
+      <div className="ms-caption">本地音乐</div>
 
       {importing ? (
         <Empty>正在导入本地音乐…</Empty>
       ) : localSongs.length === 0 ? (
-        <Empty>还没有本地歌曲 —— 点「选择文件」选几首 mp3/flac，或「选择文件夹」整夹导入。</Empty>
+        <Empty sub="把 MP3 / FLAC / WAV 拖进来，或者选择文件夹批量导入。">还没有本地音乐</Empty>
       ) : (
         <VirtualList
           items={localSongs}

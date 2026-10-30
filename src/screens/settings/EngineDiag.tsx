@@ -29,7 +29,7 @@ import type { SettingItem } from '@screens/settings/catalog';
  */
 const STATE_VIEW: Record<string, { text: string; colorVar: string } | undefined> = {
   stopped: { text: '未启动', colorVar: '--md-muted' },
-  starting: { text: '启动中', colorVar: '--md-blue' },
+  starting: { text: '正在启动', colorVar: '--md-blue' },
   running: { text: '运行中', colorVar: '--md-success' },
   stopping: { text: '正在停止', colorVar: '--md-muted' },
   error: { text: '异常', colorVar: '--md-error' },
@@ -210,7 +210,7 @@ export function EngineDiag({
   return (
     <>
       {/* ── 运行状态卡（常驻，不在任何折叠里）── */}
-      <div className="set-run">
+      <div className="set-run" data-setting-id={item.id}>
         <div className="set-run-head">
           <span className="set-run-title">{item.label}</span>
           <span className="set-state is-chip">
@@ -226,13 +226,16 @@ export function EngineDiag({
             <span className="set-state-text">③ {llmChip.text}</span>
           </span>
           <span className="set-run-grow" />
-          <button type="button" className="set-run-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <Btn kind="bare" className="set-run-fold" ariaExpanded={open} onClick={() => setOpen(!open)}>
             {open ? '收起 ꜛ' : '诊断详情 ▾'}
-          </button>
-          <button type="button" className="set-run-all" onClick={() => setDrawer(true)}>
+          </Btn>
+          <Btn kind="bare" className="set-run-all" onClick={() => setDrawer(true)}>
             全部日志
-          </button>
+          </Btn>
         </div>
+
+        {/* 卡头说明（设计稿 `.s-block-head p`）：一句话说清这一块摆的是什么 */}
+        <p className="set-run-sub">进程、参数、模型与阶段日志的现场。</p>
 
         {item.why ? <div className="set-run-why">{emphasis(item.why)}</div> : null}
 
@@ -266,9 +269,9 @@ export function EngineDiag({
             最后更新：{relativeText(logs.length > 0 ? stampRef.current.at : 0, now)}
           </span>
           {allLogs.length > LOG_DEFAULT ? (
-            <button type="button" className="set-run-more" aria-expanded={logMore} onClick={() => setLogMore(!logMore)}>
+            <Btn kind="bare" className="set-run-more" ariaExpanded={logMore} onClick={() => setLogMore(!logMore)}>
               {logMore ? `收起到 ${LOG_DEFAULT} 行 ꜛ` : `展开到 ${LOG_EXPANDED} 行 ▾`}
-            </button>
+            </Btn>
           ) : null}
         </div>
       </div>
@@ -279,9 +282,9 @@ export function EngineDiag({
       */}
       <div className="set-run-detail">
         <span className="set-run-detail-t">诊断详情 —— 进程表 / 生效配置 / 模型路径 / 重启 · 重下 · 释放</span>
-        <button type="button" className="set-run-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Btn kind="bare" className="set-run-fold" ariaExpanded={open} onClick={() => setOpen(!open)}>
           {open ? '收起 ꜛ' : '展开 ▾'}
-        </button>
+        </Btn>
       </div>
 
       {eng.loadError ? (
@@ -414,9 +417,9 @@ export function EngineDiag({
               <Btn size="sm" onClick={() => void exportTxt()}>
                 导出 .txt
               </Btn>
-              <button type="button" className="set-run-drawer-x" aria-label="关闭" onClick={() => setDrawer(false)}>
+              <Btn kind="bare" className="set-run-drawer-x" ariaLabel="关闭" onClick={() => setDrawer(false)}>
                 ✕
-              </button>
+              </Btn>
             </div>
             <div className="set-run-drawer-body">
               {drawerLogs.length > 0 ? (
@@ -696,10 +699,13 @@ function DownloadState({ view }: { view: ModelDownloadView | undefined }) {
     done: '已完成',
     interrupted: '中断（可续传）',
     failed: '失败',
+    // 🔴 Rust 侧 `state.rs` 的 `error`：非零退出且盘上无 `.part` ⇒ 不可续传，只能从头重下。
+    //    漏掉它时 TS 会逼你补（Record 穷尽），但**渲染层漏掉不会报错** —— 那才是危险处。
+    error: '失败（不可续传）',
   };
   const tail = view.tail.slice(-6);
-  // 🔴 兼容新态：`interrupted` / `failed` 都按警示态上色；未知态原样显示，不崩。
-  const bad = view.state === 'interrupted' || view.state === 'failed';
+  // 🔴 三种异常态都按警示态上色；`error` 与 `failed` 的区别只在文案（能否续传）。
+  const bad = view.state === 'interrupted' || view.state === 'failed' || view.state === 'error';
   return (
     <div className={bad ? 'set-diag-dl is-bad' : 'set-diag-dl'}>
       <div className="set-diag-dl-head">

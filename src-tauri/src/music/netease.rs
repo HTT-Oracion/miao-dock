@@ -960,6 +960,116 @@ pub async fn personalized(cookie: &str) -> Result<Vec<Playlist>, String> {
         .collect())
 }
 
+/// 推荐新歌（`/personalized/newsong`，**不需要登录**）
+///
+/// 与「每日推荐」的区别：每日推荐是**按账号口味**的（要 cookie、每天一份），
+/// 这里是**平台级的新歌池**（匿名可取）—— 首页「今日精选」要的是后者：
+/// 没登录的用户也该看到"今天有什么可听的"。
+///
+/// 响应形状与普通歌曲记录不同：每一项是 `{ id, name, picUrl, song }`，真正的歌曲对象在
+/// `song` 里；`picUrl` 在外层（推荐位封面），内层 album 常常没有封面 —— 所以要把外层
+/// `picUrl` 补进 `al.picUrl`，否则整列歌曲会没有封面。
+pub async fn new_songs(cookie: &str, limit: u32) -> Result<Vec<Song>, String> {
+    let client = build_client();
+    let limit_s = limit.to_string();
+    let result = get_api(
+        &client,
+        "/api/personalized/newsong",
+        &[("limit", limit_s.as_str()), ("csrf_token", "")],
+        cookie,
+    )
+    .await?;
+
+    let items = result
+        .get("result")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut songs: Vec<Song> = items
+        .iter()
+        .filter_map(|item| {
+            let mut song = item.get("song").cloned().unwrap_or_else(|| item.clone());
+            // 没有歌名的条目直接丢：那是"广告位"或残缺记录，渲染出来是一行空行
+            song.get("name")?;
+            if let Some(pic) = item.get("picUrl").and_then(|v| v.as_str()) {
+                if !pic.is_empty() {
+                    if let Some(obj) = song.as_object_mut() {
+                        let al = obj.entry("al").or_insert_with(|| serde_json::json!({}));
+                        if let Some(al_obj) = al.as_object_mut() {
+                            al_obj
+                                .entry("picUrl")
+                                .or_insert_with(|| serde_json::Value::String(pic.to_string()));
+                        }
+                    }
+                }
+            }
+            Some(map_song_record(&song))
+        })
+        .collect();
+
+    /*
+     * **补专辑名**：`/api/personalized/newsong` 的 `song` 对象里 `al` 往往只有
+     * `id` / `picUrl`，没有 `name` —— 于是「今日精选」那一列专辑会全是「—」。
+     * 这里对缺专辑名的那些 id 补一次 `song/detail`（批量，一次请求），
+     * 用返回的 `al.name` 填回去。拿不到就保持空（前端显示「—」，不编造）。
+     */
+    let missing: Vec<String> = songs
+        .iter()
+        .filter(|s| s.album.is_empty() && !s.id.is_empty())
+        .map(|s| s.id.clone())
+        .collect();
+    if !missing.is_empty() {
+        let ids_json = format!(
+            "[{}]",
+            missing
+                .iter()
+                .map(|id| format!("{{\"id\":\"{id}\"}}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        if let Ok(detail) = post_api(
+            &client,
+            "/api/v3/song/detail",
+            &[("c", ids_json.as_str()), ("csrf_token", "")],
+            cookie,
+        )
+        .await
+        {
+            let by_id: std::collections::HashMap<String, String> = detail
+                .get("songs")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| {
+                            let id = s.get("id").and_then(|v| v.as_i64()).map(|n| n.to_string())?;
+                            let name = s
+                                .get("al")
+                                .and_then(|al| al.get("name"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if name.is_empty() {
+                                None
+                            } else {
+                                Some((id, name.to_string()))
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            for s in songs.iter_mut() {
+                if s.album.is_empty() {
+                    if let Some(name) = by_id.get(&s.id) {
+                        s.album = name.clone();
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(songs)
+}
+
 /// 每日推荐歌曲
 pub async fn recommend_songs(cookie: &str) -> Result<Vec<Song>, String> {
     let client = build_client();
