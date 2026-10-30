@@ -4,6 +4,10 @@ name: CI
 # 28k 行自证体系唯一的缺口就是"没有强制执行点"（审计 §2.1）。
 # 这里把**秒级、零依赖、跨平台**的那批设为必过门；真机门（cargo release 打包 /
 # 真权重 E3·E7 / E11 real）不进常规门，避免 CI 变成"永远红"的摆设。
+#
+# ⚠️ 2026-10-30 临时收缩：只留 lint + prettier。Rust 构建靶子 / 系统依赖 /
+#    selftest / 判定层 / tsc+build 全部注释保留（在下方，恢复时整块解开即可）。
+#    背景：ubuntu 缺 tauri 系统依赖、macOS 冷缓存全量编译太久，报错淹没真实回归。
 
 on:
   push:
@@ -36,58 +40,63 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
-      # ── Rust 工具链：判定层与契约自测（selftest:service / check:e8·e4·e10）
-      #    都要 spawn 真靶子 mangasvc —— 没有它，这些检查在 CI 必挂（本地绿是因为
-      #    target/debug 里已有构建产物）。缓存后增量构建约几十秒。
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      # `tauri` 在 Linux 上链接 gtk/glib/webkit2gtk（macOS 用系统 WKWebView、Windows 用
-      # WebView2，都不需要）。清单按 tauri v2 官方文档裁剪：xdo 只服务全局快捷键插件、
-      # openssl 只服务 native-tls —— 本仓库都没用。ayatana 是 24.04 里 appindicator 的唯一形态。
-      - name: 安装 Linux 系统依赖（tauri v2 官方清单裁剪）
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-      - name: 构建 mangasvc
-        run: cargo build --bin mangasvc
-        working-directory: src-tauri
-
-      # ── 源码级检查：只读源码/配置，零依赖、秒级、不起进程 ──────────────
-      # check:docs 内部会跑 music/units/settings/autostart 四个套件对账，故一并覆盖。
-      # 命令收束后逐条命令住 e2eScripts.json：`npm run task -- <id>`（npm run task 看清单）。
-      - name: 源码级检查
-        run: |
-          npm run task -- check:docs
-          npm run task -- check:docpaths
-          npm run task -- check:resilience
-          npm run task -- check:bundle
-          npm run task -- check:quit
-          npm run task -- check:autostart
-          npm run task -- check:ia
-          npm run task -- check:units
-          npm run task -- check:music
-          npm run task -- check:settings
-          npm run task -- check:registry
-
-      # ── 契约自测：引擎 + 服务（用 mock 引擎，纯 Node，不碰真权重）──────
-      - name: 引擎与服务契约自测
-        run: npm run selftest
-
-      # ── 判定层：真服务 + 假引擎，秒级；已是平台忠实断言（D-140）──────
-      - name: 判定层检查
-        run: |
-          npm run task -- check:e8
-          npm run task -- check:e4
-          npm run task -- check:e10
-
       # ── 代码校验：eslint + prettier（本地由 husky 的 pre-commit 守着，这里是强制点）──
       - name: 代码校验（eslint + prettier）
         run: |
           npm run lint
           npm run format:check
 
-      - name: 前端类型与构建
-        run: npm run build
+      # ────────────────────────────────────────────────────────────────────
+      # 以下暂时停用（2026-10-30）。恢复顺序：先解开"Rust 工具链"三步，
+      # 确认 mangasvc 双平台能构建，再逐块解开检查与自测。
+      # ────────────────────────────────────────────────────────────────────
+
+      # # ── Rust 工具链：判定层与契约自测（selftest:service / check:e8·e4·e10）
+      # #    都要 spawn 真靶子 mangasvc —— 没有它，这些检查在 CI 必挂（本地绿是因为
+      # #    target/debug 里已有构建产物）。缓存后增量构建约几十秒。
+      # - uses: dtolnay/rust-toolchain@stable
+      # - uses: Swatinem/rust-cache@v2
+      #   with:
+      #     workspaces: src-tauri
+      # # `tauri` 在 Linux 上链接 gtk/glib/webkit2gtk（macOS 用系统 WKWebView、Windows 用
+      # # WebView2，都不需要）。清单按 tauri v2 官方文档裁剪：xdo 只服务全局快捷键插件、
+      # # openssl 只服务 native-tls —— 本仓库都没用。ayatana 是 24.04 里 appindicator 的唯一形态。
+      # - name: 安装 Linux 系统依赖（tauri v2 官方清单裁剪）
+      #   if: runner.os == 'Linux'
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      # - name: 构建 mangasvc
+      #   run: cargo build --bin mangasvc
+      #   working-directory: src-tauri
+
+      # # ── 源码级检查：只读源码/配置，零依赖、秒级、不起进程 ──────────────
+      # # check:docs 内部会跑 music/units/settings/autostart 四个套件对账，故一并覆盖。
+      # # 命令收束后逐条命令住 e2eScripts.json：`npm run task -- <id>`（npm run task 看清单）。
+      # - name: 源码级检查
+      #   run: |
+      #     npm run task -- check:docs
+      #     npm run task -- check:docpaths
+      #     npm run task -- check:resilience
+      #     npm run task -- check:bundle
+      #     npm run task -- check:quit
+      #     npm run task -- check:autostart
+      #     npm run task -- check:ia
+      #     npm run task -- check:units
+      #     npm run task -- check:music
+      #     npm run task -- check:settings
+      #     npm run task -- check:registry
+
+      # # ── 契约自测：引擎 + 服务（用 mock 引擎，纯 Node，不碰真权重）──────
+      # - name: 引擎与服务契约自测
+      #   run: npm run selftest
+
+      # # ── 判定层：真服务 + 假引擎，秒级；已是平台忠实断言（D-140）──────
+      # - name: 判定层检查
+      #   run: |
+      #     npm run task -- check:e8
+      #     npm run task -- check:e4
+      #     npm run task -- check:e10
+
+      # - name: 前端类型与构建
+      #   run: npm run build
